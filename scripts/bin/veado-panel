@@ -1,0 +1,437 @@
+#!/usr/bin/env python3
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "wayland")
+
+try:
+    import obsws_python as obs
+except ImportError:
+    obs = None
+
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QApplication,
+    QGridLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+
+# ──────────────────────────────────────────────
+# Veadotube settings
+# ──────────────────────────────────────────────
+
+INSTANCE_DIR = Path.home() / ".veadotube" / "instances"
+
+BUTTONS = [
+    ("NORMAL", 4),  # Veadotube state 5
+    ("SHY",    5),  # Veadotube state 6
+    ("CRY",    6),  # Veadotube state 7
+    ("WOW",    7),  # Veadotube state 8
+]
+
+
+# ──────────────────────────────────────────────
+# OBS settings
+# ──────────────────────────────────────────────
+
+OBS_HOST = "127.0.0.1"
+OBS_PORT = 4455
+OBS_SCENE_NAME = "Util_Avatar"
+
+OBS_PASSWORD_FILE = (
+    Path.home()
+    / ".config"
+    / "veado-panel"
+    / "obs-password"
+)
+
+# Button label → OBS group that should be visible.
+# NORMAL has no visible effect group.
+OBS_GROUP_FOR_STATE = {
+    "NORMAL": None,
+    "SHY": "SHY",
+    "CRY": "SAD",
+    "WOW": "WOW",
+}
+
+OBS_EFFECT_GROUPS = (
+    "WOW",
+    "SAD",
+    "SHY",
+)
+
+
+# ──────────────────────────────────────────────
+# Veadotube functions
+# ──────────────────────────────────────────────
+
+def get_server() -> str:
+    files = sorted(
+        INSTANCE_DIR.glob("mini-*"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+    if not files:
+        raise RuntimeError("Veadotube Mini is not running.")
+
+    try:
+        data = json.loads(
+            files[0].read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            "Could not read the Veadotube instance file."
+        ) from error
+
+    server = str(data.get("server", "")).strip()
+
+    if not server:
+        raise RuntimeError(
+            "Veadotube's server is not enabled."
+        )
+
+    return server
+
+
+def run_curl(arguments: list[str]) -> str:
+    result = subprocess.run(
+        ["curl", "-fsSG", *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            result.stderr.strip()
+            or "Veadotube command failed."
+        )
+
+    return result.stdout.strip()
+
+
+def get_states() -> list[str]:
+    server = get_server()
+
+    output = run_curl([
+        f"http://{server}/",
+        "--data-urlencode", "cmd0=nodes",
+        "--data-urlencode", "cmd1=stateEvents",
+        "--data-urlencode", "cmd2=mini",
+        "--data-urlencode", "cmd3=list",
+    ])
+
+    states = [
+        line.strip()
+        for line in output.splitlines()
+        if line.strip()
+    ]
+
+    if len(states) < 8:
+        raise RuntimeError(
+            f"Veadotube returned only {len(states)} states."
+        )
+
+    return states
+
+
+def set_state(state_id: str) -> None:
+    server = get_server()
+
+    run_curl([
+        f"http://{server}/",
+        "--data-urlencode", "cmd0=nodes",
+        "--data-urlencode", "cmd1=stateEvents",
+        "--data-urlencode", "cmd2=mini",
+        "--data-urlencode", "cmd3=set",
+        "--data-urlencode", f"cmd4={state_id}",
+    ])
+
+
+# ──────────────────────────────────────────────
+# OBS functions
+# ──────────────────────────────────────────────
+
+def get_obs_password() -> str:
+    environment_password = os.environ.get(
+        "OBS_WEBSOCKET_PASSWORD"
+    )
+
+    if environment_password is not None:
+        return environment_password
+
+    try:
+        return OBS_PASSWORD_FILE.read_text(
+            encoding="utf-8"
+        ).strip()
+    except FileNotFoundError:
+        return ""
+    except OSError as error:
+        raise RuntimeError(
+            f"Could not read OBS password file: "
+            f"{OBS_PASSWORD_FILE}"
+        ) from error
+
+
+def set_obs_avatar_state(label: str) -> str:
+    """
+    Make the appropriate OBS group visible and hide every other
+    avatar-effect group.
+
+    NORMAL hides all effect groups.
+    SHY shows SHY.
+    CRY shows SAD.
+    WOW shows WOW.
+    """
+
+    if obs is None:
+        raise RuntimeError(
+            "The python-obsws package is not installed."
+        )
+
+    if label not in OBS_GROUP_FOR_STATE:
+        raise RuntimeError(
+            f"No OBS configuration exists for {label}."
+        )
+
+    target_group = OBS_GROUP_FOR_STATE[label]
+
+    try:
+        client = obs.ReqClient(
+            host=OBS_HOST,
+            port=OBS_PORT,
+            password=get_obs_password(),
+            timeout=3,
+        )
+
+        # Look up every group before changing anything. This prevents
+        # OBS from being left half-updated if a group name is wrong.
+        group_ids = {
+            group_name: client.get_scene_item_id(
+                OBS_SCENE_NAME,
+                group_name,
+            ).scene_item_id
+            for group_name in OBS_EFFECT_GROUPS
+        }
+
+        # Hide all groups that are not the selected one first.
+        for group_name in OBS_EFFECT_GROUPS:
+            if group_name == target_group:
+                continue
+
+            client.set_scene_item_enabled(
+                OBS_SCENE_NAME,
+                group_ids[group_name],
+                False,
+            )
+
+        # Finally show the selected group, unless this is NORMAL.
+        if target_group is not None:
+            client.set_scene_item_enabled(
+                OBS_SCENE_NAME,
+                group_ids[target_group],
+                True,
+            )
+
+    except Exception as error:
+        raise RuntimeError(
+            f"Could not update avatar groups in "
+            f"'{OBS_SCENE_NAME}': {error}"
+        ) from error
+
+    if target_group is None:
+        return "all effect groups hidden"
+
+    return f"{target_group} shown"
+
+
+# ──────────────────────────────────────────────
+# GUI
+# ──────────────────────────────────────────────
+
+class AvatarControl(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.states: list[str] = []
+        self.buttons: dict[str, QPushButton] = {}
+
+        self.setWindowTitle("Avatar Control")
+        self.resize(460, 260)
+        self.setMinimumSize(340, 210)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel("AVATAR CONTROL")
+        title.setObjectName("title")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        layout.addLayout(grid, stretch=1)
+
+        for index, (label, slot) in enumerate(BUTTONS):
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setMinimumHeight(65)
+
+            button.clicked.connect(
+                lambda _checked=False,
+                name=label,
+                state_slot=slot:
+                    self.choose_state(name, state_slot)
+            )
+
+            grid.addWidget(
+                button,
+                index // 2,
+                index % 2,
+            )
+
+            self.buttons[label] = button
+
+        self.status = QLabel("Connecting…")
+        self.status.setObjectName("status")
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+
+        self.setStyleSheet("""
+            QWidget {
+                background: #17131f;
+                color: #f5efff;
+            }
+
+            QLabel#title {
+                font-size: 18px;
+                font-weight: bold;
+                letter-spacing: 2px;
+                padding: 6px;
+            }
+
+            QPushButton {
+                background: #554376;
+                color: #f5efff;
+                border: 2px solid #72589d;
+                border-radius: 8px;
+                font-size: 15px;
+                font-weight: bold;
+            }
+
+            QPushButton:hover {
+                background: #72589d;
+            }
+
+            QPushButton:checked {
+                background: #c09bea;
+                color: #17131f;
+                border-color: #ead8ff;
+            }
+
+            QLabel#status {
+                background: #241c30;
+                color: #cbbbe0;
+                border-radius: 6px;
+                padding: 9px;
+            }
+        """)
+
+        self.refresh_states()
+
+    def refresh_states(self) -> None:
+        try:
+            self.states = get_states()
+
+            for button in self.buttons.values():
+                button.setEnabled(True)
+
+            self.status.setText(
+                "Connected · Click a state · "
+                "E or Esc closes"
+            )
+
+        except RuntimeError as error:
+            self.states = []
+
+            for button in self.buttons.values():
+                button.setEnabled(False)
+
+            self.status.setText(f"Error: {error}")
+
+    def choose_state(
+        self,
+        label: str,
+        slot: int,
+    ) -> None:
+        try:
+            if len(self.states) < 8:
+                self.refresh_states()
+
+            if slot >= len(self.states):
+                raise RuntimeError(
+                    f"No Veadotube state exists for {label}."
+                )
+
+            # Switch the Veadotube animation.
+            set_state(self.states[slot])
+
+            # Set the complete OBS visibility state.
+            obs_result = set_obs_avatar_state(label)
+
+            for name, button in self.buttons.items():
+                button.setChecked(name == label)
+
+            self.status.setText(
+                f"Selected: {label} · {obs_result}"
+            )
+
+        except RuntimeError as error:
+            self.status.setText(f"Error: {error}")
+
+    def keyPressEvent(self, event) -> None:
+        shortcuts = {
+            Qt.Key.Key_5: ("NORMAL", 4),
+            Qt.Key.Key_6: ("SHY", 5),
+            Qt.Key.Key_7: ("CRY", 6),
+            Qt.Key.Key_8: ("WOW", 7),
+        }
+
+        if event.key() in (
+            Qt.Key.Key_E,
+            Qt.Key.Key_Escape,
+        ):
+            self.close()
+            return
+
+        selection = shortcuts.get(event.key())
+
+        if selection:
+            self.choose_state(*selection)
+            return
+
+        super().keyPressEvent(event)
+
+
+def main() -> int:
+    app = QApplication(sys.argv)
+    app.setApplicationName("Avatar Control")
+
+    window = AvatarControl()
+    window.show()
+
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

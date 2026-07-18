@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+CONFIG="$HOME/.config/cava/stream-purple.conf"
+
+if [[ ! -f "$CONFIG" ]]; then
+    echo "CAVA stream config not found: $CONFIG" >&2
+    exit 1
+fi
+
+exec cava -p "$CONFIG"

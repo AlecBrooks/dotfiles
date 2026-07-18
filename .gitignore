@@ -1,0 +1,38 @@
+# Secrets and credentials
+**/.env
+**/.env.*
+**/*.key
+**/*.pem
+**/*secret*
+**/*token*
+**/credentials*
+**/hosts.yml
+
+# OBS websocket password
+scripts/bin/obs-password
+
+# Python
+**/__pycache__/
+**/*.pyc
+
+# Logs, backups, and temporary files
+**/*.log
+**/*.tmp
+**/*.bak
+**/*~
+
+# Sublime transient state
+**/*.sublime-workspace
+**/*.sublime_session
+sublime/.config/sublime-text/Packages/User/Package Control.last-run
+sublime/.config/sublime-text/Packages/User/Package Control.cache
+sublime/.config/sublime-text/Packages/User/Package Control.ca-list
+sublime/.config/sublime-text/Packages/User/Package Control.merged-ca-bundle
+
+# General junk
+.DS_Store
+Thumbs.db
+
+# Generated or backup configuration files
+sublime/.config/sublime-text/Packages/User/Package Control.user-ca-bundle
+ytjukebox/.config/ytjukebox/playlist.toml.save

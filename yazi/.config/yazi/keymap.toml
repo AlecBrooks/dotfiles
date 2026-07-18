@@ -1,0 +1,4 @@
+[[mgr.prepend_keymap]]
+on = "<C-g>"
+run = 'shell --orphan -- kitty --title LazyGit --directory "$PWD" lazygit'
+desc = "Open LazyGit in current directory"

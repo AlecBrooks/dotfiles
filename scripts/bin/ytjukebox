@@ -1,0 +1,1194 @@
+#!/usr/bin/env python3
+"""A tiny Kitty-native terminal music player for YouTube links.
+
+External runtime dependencies:
+  - mpv
+  - yt-dlp
+  - kitten (provided by Kitty), optional for static terminal artwork
+
+The looping visualizer is rendered directly by mpv through Kitty's graphics
+protocol; the source video is never converted and its audio is disabled.
+The visual panel is sized in pixels while mpv receives the real terminal size.
+
+Python dependencies: standard library only (Python 3.11+).
+"""
+
+from __future__ import annotations
+
+import atexit
+import hashlib
+import json
+import os
+import select
+import shutil
+import signal
+import socket
+import struct
+import subprocess
+import sys
+import termios
+import time
+import tomllib
+import tty
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+APP_NAME = "ytjukebox"
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / APP_NAME
+CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / APP_NAME
+DEFAULT_CONFIG = CONFIG_DIR / "playlist.toml"
+METADATA_CACHE = CACHE_DIR / "metadata.json"
+THUMB_DIR = CACHE_DIR / "thumbnails"
+MPV_SOCKET = Path(f"/tmp/{APP_NAME}-{os.getuid()}.sock")
+KITTY_IMAGE_ID = 100_000 + (os.getpid() % 1_000_000)
+
+ESC = "\x1b"
+CSI = ESC + "["
+OSC = ESC + "]"
+ST = ESC + "\\"
+
+
+@dataclass
+class Settings:
+    name: str = "YouTube Jukebox"
+    volume: int = 75
+    loop: bool = False
+    auto_advance: bool = True
+    album_art: bool = True
+    art_width: int = 42
+    art_height: int = 18
+    seek_seconds: int = 5
+
+
+@dataclass
+class VisualizerSettings:
+    enabled: bool = False
+    file: Path | None = None
+    width: int = 40
+    height: int = 18
+    fps: int = 15
+
+
+@dataclass
+class Track:
+    url: str
+    title: str = ""
+    artist: str = ""
+    duration: float | None = None
+    thumbnail_url: str = ""
+    video_id: str = ""
+    custom_title: bool = False
+    custom_artist: bool = False
+
+    @property
+    def display_title(self) -> str:
+        return self.title or self.url
+
+    @property
+    def display_artist(self) -> str:
+        return self.artist or "Unknown artist"
+
+
+class Terminal:
+    def __init__(self) -> None:
+        self.fd = sys.stdin.fileno()
+        self.old_attrs: list[Any] | None = None
+        self.active = False
+
+    def __enter__(self) -> "Terminal":
+        self.old_attrs = termios.tcgetattr(self.fd)
+        tty.setcbreak(self.fd)
+        self.active = True
+        write(f"{CSI}?1049h{CSI}?25l{CSI}2J{CSI}H")
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        self.restore()
+
+    def restore(self) -> None:
+        if not self.active:
+            return
+        self.active = False
+        clear_kitty_images()
+        write(f"{CSI}0m{CSI}?25h{CSI}?1049l")
+        if self.old_attrs is not None:
+            termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old_attrs)
+
+    def read_key(self, timeout: float = 0.1) -> str | None:
+        ready, _, _ = select.select([self.fd], [], [], timeout)
+        if not ready:
+            return None
+
+        data = os.read(self.fd, 1)
+        if not data:
+            return None
+
+        if data == b"\x1b":
+            # Arrow/function keys arrive as a small escape sequence.
+            time.sleep(0.005)
+            while True:
+                ready, _, _ = select.select([self.fd], [], [], 0)
+                if not ready:
+                    break
+                data += os.read(self.fd, 16)
+            return data.decode("utf-8", errors="ignore")
+
+        return data.decode("utf-8", errors="ignore")
+
+
+def write(text: str) -> None:
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
+def cursor(row: int, col: int) -> str:
+    return f"{CSI}{max(1, row)};{max(1, col)}H"
+
+
+def strip_newlines(text: str) -> str:
+    return " ".join(text.replace("\r", " ").replace("\n", " ").split())
+
+
+def truncate(text: str, width: int) -> str:
+    text = strip_newlines(text)
+    if width <= 0:
+        return ""
+    if len(text) <= width:
+        return text
+    if width == 1:
+        return "…"
+    return text[: width - 1] + "…"
+
+
+def format_time(value: float | int | None) -> str:
+    if value is None or value < 0:
+        return "--:--"
+    seconds = int(value)
+    hours, rem = divmod(seconds, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+def terminal_geometry() -> tuple[int, int, int, int]:
+    """Return rows, columns, pixel width and pixel height."""
+    try:
+        packed = fcntl_ioctl_winsz(sys.stdout.fileno())
+        rows, cols, px_w, px_h = struct.unpack("HHHH", packed)
+    except OSError:
+        size = shutil.get_terminal_size((100, 30))
+        rows, cols, px_w, px_h = size.lines, size.columns, 0, 0
+
+    rows = rows or 30
+    cols = cols or 100
+    # Kitty wants pixel dimensions when --use-window-size is supplied. These
+    # estimates are only used when the kernel does not report pixel dimensions.
+    px_w = px_w or cols * 10
+    px_h = px_h or rows * 20
+    return rows, cols, px_w, px_h
+
+
+def fcntl_ioctl_winsz(fd: int) -> bytes:
+    import fcntl
+
+    return fcntl.ioctl(fd, termios.TIOCGWINSZ, b"\0" * 8)
+
+
+def require_commands(visualizer: VisualizerSettings | None = None) -> None:
+    required = ["mpv", "yt-dlp"]
+    missing = [name for name in required if shutil.which(name) is None]
+    if missing:
+        joined = ", ".join(missing)
+        raise RuntimeError(
+            f"Missing required command(s): {joined}. On Arch: sudo pacman -S mpv yt-dlp"
+        )
+
+
+def kitten_command() -> list[str] | None:
+    if shutil.which("kitten"):
+        return ["kitten", "icat"]
+    if shutil.which("kitty"):
+        return ["kitty", "+kitten", "icat"]
+    return None
+
+
+def clear_kitty_images() -> None:
+    # Delete all Kitty graphics placements currently visible on screen.
+    write(f"{ESC}_Ga=d,d=A{ST}")
+
+
+def render_image(
+    path: Path,
+    left: int,
+    top: int,
+    width: int,
+    height: int,
+    *,
+    animated: bool = False,
+) -> None:
+    command = kitten_command()
+    if command is None or not path.exists() or width < 4 or height < 2:
+        return
+
+    rows, cols, px_w, px_h = terminal_geometry()
+    args = command + [
+        "--stdin=no",
+        "--transfer-mode=file",
+        f"--image-id={KITTY_IMAGE_ID}",
+        "--scale-up",
+        "--align=center",
+        f"--loop={-1 if animated else 0}",
+        f"--place={width}x{height}@{left}x{top}",
+        f"--use-window-size={cols},{rows},{px_w},{px_h}",
+        str(path),
+    ]
+
+    try:
+        result = subprocess.run(
+            args,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=10,
+        )
+        if result.stdout:
+            # icat emits Kitty graphics escape codes. Preserve our text cursor.
+            os.write(sys.stdout.fileno(), b"\x1b7" + result.stdout + b"\x1b8")
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def load_json(path: Path, default: Any) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def save_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(path)
+
+
+def create_default_config(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        '''# Add one [[tracks]] block per YouTube song/video.
+# title and artist are optional overrides. If omitted, yt-dlp fills them in.
+
+[settings]
+name = "Night Shift Radio"
+volume = 75
+loop = false
+auto_advance = true
+album_art = true
+art_width = 42
+art_height = 18
+seek_seconds = 5
+
+# Optional looping video shown directly inside the left side of the player.
+# mpv plays the original file without converting it and disables its audio.
+[visualizer]
+enabled = false
+file = "~/Videos/ytjukebox/vis.mp4"
+width = 40
+height = 18
+fps = 15
+
+[[tracks]]
+url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+# title = "Optional custom title"
+# artist = "Optional custom artist"
+
+# [[tracks]]
+# url = "https://youtu.be/ANOTHER_VIDEO_ID"
+''',
+        encoding="utf-8",
+    )
+
+
+def load_config(path: Path) -> tuple[Settings, VisualizerSettings, list[Track]]:
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        create_default_config(path)
+        raise RuntimeError(f"Created a starter playlist at {path}\nEdit it, then run ytjukebox again.")
+    except tomllib.TOMLDecodeError as exc:
+        raise RuntimeError(f"Invalid TOML in {path}: {exc}") from exc
+
+    raw_settings = raw.get("settings", {})
+    settings = Settings(
+        name=str(raw_settings.get("name", "YouTube Jukebox")),
+        volume=max(0, min(100, int(raw_settings.get("volume", 75)))),
+        loop=bool(raw_settings.get("loop", False)),
+        auto_advance=bool(raw_settings.get("auto_advance", True)),
+        album_art=bool(raw_settings.get("album_art", True)),
+        art_width=max(12, int(raw_settings.get("art_width", 42))),
+        art_height=max(6, int(raw_settings.get("art_height", 18))),
+        seek_seconds=max(1, int(raw_settings.get("seek_seconds", 5))),
+    )
+
+    raw_visualizer = raw.get("visualizer", {})
+    raw_visualizer_file = str(raw_visualizer.get("file", "")).strip()
+    visualizer_file: Path | None = None
+    if raw_visualizer_file:
+        expanded = Path(os.path.expandvars(raw_visualizer_file)).expanduser()
+        visualizer_file = expanded if expanded.is_absolute() else (path.parent / expanded)
+        visualizer_file = visualizer_file.resolve()
+
+    visualizer = VisualizerSettings(
+        enabled=bool(raw_visualizer.get("enabled", False)),
+        file=visualizer_file,
+        width=max(16, int(raw_visualizer.get("width", 40))),
+        height=max(6, int(raw_visualizer.get("height", 18))),
+        fps=max(1, min(30, int(raw_visualizer.get("fps", 15)))),
+    )
+
+    entries = raw.get("tracks", [])
+    if not isinstance(entries, list):
+        raise RuntimeError("The config must contain one or more [[tracks]] blocks.")
+
+    tracks: list[Track] = []
+    for index, item in enumerate(entries, start=1):
+        if not isinstance(item, dict) or not item.get("url"):
+            raise RuntimeError(f"Track {index} is missing a url.")
+        title = str(item.get("title", "")).strip()
+        artist = str(item.get("artist", "")).strip()
+        tracks.append(
+            Track(
+                url=str(item["url"]).strip(),
+                title=title,
+                artist=artist,
+                custom_title=bool(title),
+                custom_artist=bool(artist),
+            )
+        )
+
+    if not tracks:
+        raise RuntimeError(f"No tracks found in {path}. Add at least one [[tracks]] block.")
+    return settings, visualizer, tracks
+
+
+def fetch_metadata(track: Track) -> dict[str, Any]:
+    command = [
+        "yt-dlp",
+        "--dump-single-json",
+        "--skip-download",
+        "--no-warnings",
+        "--no-playlist",
+        track.url,
+    ]
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
+    )
+    if result.returncode != 0:
+        message = result.stderr.strip().splitlines()
+        detail = message[-1] if message else "unknown yt-dlp error"
+        raise RuntimeError(detail)
+    return json.loads(result.stdout)
+
+
+def hydrate_tracks(tracks: list[Track]) -> None:
+    cache: dict[str, Any] = load_json(METADATA_CACHE, {})
+    changed = False
+
+    print("Reading YouTube metadata (cached after the first run)…")
+    for index, track in enumerate(tracks, start=1):
+        print(f"  [{index:>2}/{len(tracks)}] {truncate(track.url, 80)}", end="", flush=True)
+        data = cache.get(track.url)
+        if not isinstance(data, dict):
+            try:
+                data = fetch_metadata(track)
+                cache[track.url] = {
+                    "id": data.get("id", ""),
+                    "title": data.get("title", ""),
+                    "uploader": data.get("uploader") or data.get("channel") or "",
+                    "artist": data.get("artist") or "",
+                    "duration": data.get("duration"),
+                    "thumbnail": data.get("thumbnail", ""),
+                }
+                data = cache[track.url]
+                changed = True
+                print("  fetched")
+            except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+                print(f"  failed: {exc}")
+                data = {}
+        else:
+            print("  cached")
+
+        if not track.custom_title:
+            track.title = str(data.get("title") or track.title or track.url)
+        if not track.custom_artist:
+            track.artist = str(data.get("artist") or data.get("uploader") or "Unknown artist")
+        try:
+            duration = data.get("duration")
+            track.duration = float(duration) if duration is not None else None
+        except (TypeError, ValueError):
+            track.duration = None
+        track.thumbnail_url = str(data.get("thumbnail") or "")
+        track.video_id = str(data.get("id") or "")
+
+    if changed:
+        save_json(METADATA_CACHE, cache)
+
+
+def thumbnail_path(track: Track) -> Path | None:
+    if not track.thumbnail_url:
+        return None
+
+    parsed = urllib.parse.urlparse(track.thumbnail_url)
+    suffix = Path(parsed.path).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"}:
+        suffix = ".jpg"
+    key = hashlib.sha256(track.url.encode("utf-8")).hexdigest()[:24]
+    path = THUMB_DIR / f"{key}{suffix}"
+    if path.exists() and path.stat().st_size > 0:
+        return path
+
+    THUMB_DIR.mkdir(parents=True, exist_ok=True)
+    request = urllib.request.Request(
+        track.thumbnail_url,
+        headers={"User-Agent": "Mozilla/5.0 ytjukebox/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            path.write_bytes(response.read())
+        return path
+    except (OSError, urllib.error.URLError):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+
+
+class MpvPlayer:
+    def __init__(self, volume: int) -> None:
+        self.volume = volume
+        self.process: subprocess.Popen[bytes] | None = None
+        self.current_index: int | None = None
+        self.manual_stop = False
+        self.last_error = ""
+
+    def _remove_socket(self) -> None:
+        try:
+            MPV_SOCKET.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def play(self, track: Track, index: int) -> None:
+        self.stop()
+        self._remove_socket()
+        self.manual_stop = False
+        self.last_error = ""
+        args = [
+            "mpv",
+            "--no-video",
+            "--force-window=no",
+            "--input-terminal=no",
+            "--really-quiet",
+            "--no-resume-playback",
+            "--ytdl-format=bestaudio/best",
+            f"--volume={self.volume}",
+            f"--input-ipc-server={MPV_SOCKET}",
+            track.url,
+        ]
+        self.process = subprocess.Popen(
+            args,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        self.current_index = index
+
+    def stop(self) -> None:
+        if self.process is None:
+            return
+        self.manual_stop = True
+        if self.process.poll() is None:
+            try:
+                self.command(["quit"])
+                self.process.wait(timeout=1.0)
+            except (OSError, subprocess.TimeoutExpired):
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+        self.process = None
+        self._remove_socket()
+
+    def is_running(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
+    def ended(self) -> bool:
+        return self.process is not None and self.process.poll() is not None
+
+    def consume_error(self) -> str:
+        if self.process is None or self.process.stderr is None:
+            return ""
+        try:
+            data = self.process.stderr.read() or b""
+            return data.decode("utf-8", errors="replace").strip().splitlines()[-1]
+        except (OSError, IndexError):
+            return ""
+
+    def command(self, command: list[Any], request_id: int | None = None) -> dict[str, Any] | None:
+        if not MPV_SOCKET.exists():
+            return None
+        payload: dict[str, Any] = {"command": command}
+        if request_id is not None:
+            payload["request_id"] = request_id
+        raw = (json.dumps(payload) + "\n").encode("utf-8")
+
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(0.15)
+                client.connect(str(MPV_SOCKET))
+                client.sendall(raw)
+                if request_id is None:
+                    return None
+                buffer = b""
+                while b"\n" not in buffer:
+                    chunk = client.recv(4096)
+                    if not chunk:
+                        break
+                    buffer += chunk
+                for line in buffer.splitlines():
+                    response = json.loads(line)
+                    if response.get("request_id") == request_id:
+                        return response
+        except (OSError, json.JSONDecodeError):
+            return None
+        return None
+
+    def get_property(self, name: str, default: Any = None) -> Any:
+        response = self.command(["get_property", name], request_id=1)
+        if not response or response.get("error") != "success":
+            return default
+        return response.get("data", default)
+
+    def toggle_pause(self) -> None:
+        self.command(["cycle", "pause"])
+
+    def seek(self, seconds: int) -> None:
+        self.command(["seek", seconds, "relative"])
+
+    def change_volume(self, delta: int) -> None:
+        self.volume = max(0, min(100, self.volume + delta))
+        self.command(["set_property", "volume", self.volume])
+
+
+class MpvVisualizer:
+    """Render a muted looping local video inside a fixed Kitty terminal region."""
+
+    def __init__(self) -> None:
+        self.process: subprocess.Popen[bytes] | None = None
+        self.layout: tuple[Path, int, int, int, int, int] | None = None
+        self.last_error = ""
+
+    def is_running(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
+    def _read_error(self) -> str:
+        if self.process is None or self.process.stderr is None:
+            return ""
+        try:
+            data = self.process.stderr.read() or b""
+        except OSError:
+            return ""
+        lines = data.decode("utf-8", errors="replace").strip().splitlines()
+        return lines[-1] if lines else ""
+
+    def stop(self, *, clear: bool = False) -> None:
+        process = self.process
+        self.process = None
+        self.layout = None
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                try:
+                    process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    pass
+        if clear:
+            clear_kitty_images()
+
+    def ensure(
+        self,
+        settings: VisualizerSettings,
+        *,
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+    ) -> str:
+        """Start or reposition the visualizer; return an error message if it fails."""
+        if not settings.enabled:
+            self.stop()
+            return ""
+        if settings.file is None:
+            self.stop()
+            return "Visualizer is enabled but no file is configured."
+        if not settings.file.exists() or not settings.file.is_file():
+            self.stop()
+            return f"Visualizer file not found: {settings.file}"
+        if width < 4 or height < 2:
+            self.stop()
+            return ""
+
+        # mpv's vo-kitty cols/rows options describe the *whole terminal*,
+        # not the rectangle occupied by the video.  The old implementation
+        # passed the panel's cell dimensions there, causing mpv to scale the
+        # visual across most of the terminal.  Give mpv the actual terminal
+        # geometry and use width/height (pixels) for the visual panel itself.
+        term_rows, term_cols, term_px_w, term_px_h = terminal_geometry()
+        panel_cols = max(4, width)
+        panel_rows = max(2, height)
+        cell_px_w = term_px_w / max(1, term_cols)
+        cell_px_h = term_px_h / max(1, term_rows)
+        panel_px_w = max(1, round(panel_cols * cell_px_w))
+        panel_px_h = max(1, round(panel_rows * cell_px_h))
+
+        desired = (
+            settings.file,
+            max(1, left),
+            max(1, top),
+            panel_cols,
+            panel_rows,
+            max(1, min(60, settings.fps)),
+            term_rows,
+            term_cols,
+            term_px_w,
+            term_px_h,
+        )
+        if self.layout == desired and self.is_running():
+            return ""
+
+        self.stop(clear=True)
+        (
+            source,
+            left,
+            top,
+            panel_cols,
+            panel_rows,
+            fps,
+            term_rows,
+            term_cols,
+            term_px_w,
+            term_px_h,
+        ) = desired
+        panel_px_w = max(1, round(panel_cols * term_px_w / max(1, term_cols)))
+        panel_px_h = max(1, round(panel_rows * term_px_h / max(1, term_rows)))
+
+        args = [
+            "mpv",
+            "--no-config",
+            "--profile=sw-fast",
+            "--vo=kitty",
+            "--audio=no",
+            "--loop-file=inf",
+            "--autoload-files=no",
+            "--no-resume-playback",
+            "--input-terminal=no",
+            "--really-quiet",
+            "--osc=no",
+            "--osd-level=0",
+            "--sub=no",
+            "--framedrop=vo",
+            "--keepaspect=yes",
+            "--panscan=0",
+            "--vo-kitty-alt-screen=no",
+            "--vo-kitty-config-clear=no",
+            "--vo-kitty-auto-multiplexer-passthrough=yes",
+            "--vo-kitty-use-shm=yes",
+            f"--vo-kitty-left={left}",
+            f"--vo-kitty-top={top}",
+            f"--vo-kitty-cols={term_cols}",
+            f"--vo-kitty-rows={term_rows}",
+            f"--vo-kitty-width={panel_px_w}",
+            f"--vo-kitty-height={panel_px_h}",
+            f"--vf=lavfi=[fps={fps}]",
+            str(source),
+        ]
+        try:
+            # stdout must remain attached to the terminal: the Kitty VO writes
+            # graphics-protocol escape sequences there. stderr is kept only so
+            # an immediate startup failure can be reported in the TUI.
+            self.process = subprocess.Popen(
+                args,
+                stdin=subprocess.DEVNULL,
+                stdout=None,
+                stderr=subprocess.PIPE,
+            )
+        except OSError as exc:
+            self.process = None
+            self.layout = None
+            return f"Could not start visualizer: {exc}"
+
+        self.layout = desired
+        self.last_error = ""
+        time.sleep(0.08)
+        if self.process.poll() is not None:
+            error = self._read_error() or "mpv exited while starting the visualizer"
+            self.process = None
+            self.layout = None
+            return f"Visualizer: {error}"
+        return ""
+
+    def poll_error(self) -> str:
+        if self.process is None or self.process.poll() is None:
+            return ""
+        error = self._read_error() or "visualizer mpv exited"
+        self.process = None
+        self.layout = None
+        if error == self.last_error:
+            return ""
+        self.last_error = error
+        return error
+
+
+class App:
+    def __init__(
+        self,
+        config_path: Path,
+        settings: Settings,
+        visualizer: VisualizerSettings,
+        tracks: list[Track],
+    ) -> None:
+        self.config_path = config_path
+        self.settings = settings
+        self.visualizer = visualizer
+        self.tracks = tracks
+        self.player = MpvPlayer(settings.volume)
+        self.visualizer_player = MpvVisualizer()
+        self.selected = 0
+        self.scroll = 0
+        self.running = True
+        self.needs_full_redraw = True
+        self.message = ""
+        self.message_until = 0.0
+        self.last_status_draw = 0.0
+        self.last_geometry = terminal_geometry()[:2]
+        self.last_art_track: int | None = None
+        self.terminal: Terminal | None = None
+
+    def flash(self, message: str, seconds: float = 2.5) -> None:
+        self.message = message
+        self.message_until = time.monotonic() + seconds
+
+    def selected_track(self) -> Track:
+        return self.tracks[self.selected]
+
+    def current_track(self) -> Track | None:
+        if self.player.current_index is None:
+            return None
+        if 0 <= self.player.current_index < len(self.tracks):
+            return self.tracks[self.player.current_index]
+        return None
+
+    def play_selected(self) -> None:
+        self.player.play(self.selected_track(), self.selected)
+        self.last_art_track = None
+        self.needs_full_redraw = True
+
+    def play_index(self, index: int) -> None:
+        self.selected = index % len(self.tracks)
+        self.play_selected()
+
+    def next_track(self) -> None:
+        base = self.player.current_index if self.player.current_index is not None else self.selected
+        if base + 1 >= len(self.tracks) and not self.settings.loop:
+            self.player.stop()
+            self.flash("End of playlist")
+            return
+        self.play_index((base + 1) % len(self.tracks))
+
+    def previous_track(self) -> None:
+        base = self.player.current_index if self.player.current_index is not None else self.selected
+        if base <= 0 and not self.settings.loop:
+            self.play_index(0)
+            return
+        self.play_index((base - 1) % len(self.tracks))
+
+    def reload_config(self) -> None:
+        try:
+            settings, visualizer, tracks = load_config(self.config_path)
+            require_commands(visualizer)
+            hydrate_tracks(tracks)
+            self.visualizer_player.stop(clear=True)
+            self.settings = settings
+            self.visualizer = visualizer
+            self.tracks = tracks
+            self.selected = min(self.selected, len(tracks) - 1)
+            self.player.volume = settings.volume
+            self.flash("Playlist reloaded")
+            self.needs_full_redraw = True
+        except RuntimeError as exc:
+            self.flash(str(exc), 5.0)
+
+    def edit_config(self) -> None:
+        editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "nano"
+        if self.terminal is None or self.terminal.old_attrs is None:
+            self.flash("Terminal state unavailable")
+            return
+
+        # Restore the user's normal terminal settings while the editor owns it.
+        self.visualizer_player.stop(clear=True)
+        clear_kitty_images()
+        write(f"{CSI}?25h{CSI}?1049l")
+        termios.tcsetattr(
+            sys.stdin.fileno(),
+            termios.TCSADRAIN,
+            self.terminal.old_attrs,
+        )
+        try:
+            subprocess.run([editor, str(self.config_path)], check=False)
+        finally:
+            tty.setcbreak(sys.stdin.fileno())
+            write(f"{CSI}?1049h{CSI}?25l{CSI}2J{CSI}H")
+            self.reload_config()
+
+    def handle_key(self, key: str) -> None:
+        if key in ("q", "Q", "\x03"):
+            self.running = False
+        elif key in ("\x1b[A", "k"):
+            self.selected = max(0, self.selected - 1)
+            self.needs_full_redraw = True
+        elif key in ("\x1b[B", "j"):
+            self.selected = min(len(self.tracks) - 1, self.selected + 1)
+            self.needs_full_redraw = True
+        elif key in ("\r", "\n"):
+            self.play_selected()
+        elif key == " ":
+            if self.player.is_running():
+                self.player.toggle_pause()
+            else:
+                self.play_selected()
+        elif key in ("\x1b[D", "h"):
+            self.player.seek(-self.settings.seek_seconds)
+        elif key in ("\x1b[C", "l"):
+            self.player.seek(self.settings.seek_seconds)
+        elif key in ("n", "N"):
+            self.next_track()
+        elif key in ("p", "P"):
+            self.previous_track()
+        elif key in ("+", "="):
+            self.player.change_volume(5)
+        elif key in ("-", "_"):
+            self.player.change_volume(-5)
+        elif key in ("s", "S"):
+            self.player.stop()
+            self.needs_full_redraw = True
+        elif key in ("r", "R"):
+            self.reload_config()
+        elif key in ("e", "E"):
+            self.edit_config()
+
+    def list_layout(
+        self, rows: int, cols: int
+    ) -> tuple[int, int, int, int, int, int, bool]:
+        has_visualizer = (
+            self.visualizer.enabled
+            and self.visualizer.file is not None
+            and self.visualizer.file.exists()
+            and self.visualizer.file.is_file()
+        )
+        has_artwork = self.settings.album_art and kitten_command() is not None
+        media_enabled = (has_visualizer or has_artwork) and cols >= 86 and rows >= 20
+
+        if not media_enabled:
+            return 2, cols - 4, 0, 0, 0, 0, False
+
+        requested_width = (
+            self.visualizer.width if has_visualizer else self.settings.art_width
+        )
+        requested_height = (
+            self.visualizer.height if has_visualizer else self.settings.art_height
+        )
+        # Always leave a comfortably readable playlist on the right.
+        media_width = min(requested_width, max(20, cols - 58))
+        media_height = min(requested_height, max(8, rows - 10))
+        media_left = 1
+        media_top = 2
+        list_left = media_left + media_width + 3
+        list_width = max(20, cols - list_left - 2)
+        return (
+            list_left,
+            list_width,
+            media_left,
+            media_top,
+            media_width,
+            media_height,
+            True,
+        )
+
+    def draw_full(self) -> None:
+        rows, cols, _, _ = terminal_geometry()
+        self.last_geometry = (rows, cols)
+        clear_kitty_images()
+        write(f"{CSI}2J{CSI}H")
+
+        if rows < 12 or cols < 50:
+            write(cursor(2, 2) + "Terminal is too small. Resize to at least 50×12.")
+            self.needs_full_redraw = False
+            return
+
+        (
+            list_left,
+            list_width,
+            media_left,
+            media_top,
+            media_width,
+            media_height,
+            media_enabled,
+        ) = self.list_layout(rows, cols)
+
+        title = truncate(self.settings.name, cols - 4)
+        write(cursor(1, 2) + f"{CSI}1m♫ {title}{CSI}0m")
+
+        # Reserve the bottom four rows for player status and controls.
+        list_top = 3
+        list_bottom = rows - 6
+        visible = max(1, list_bottom - list_top + 1)
+        if self.selected < self.scroll:
+            self.scroll = self.selected
+        elif self.selected >= self.scroll + visible:
+            self.scroll = self.selected - visible + 1
+
+        if media_enabled:
+            has_visualizer = (
+                self.visualizer.enabled
+                and self.visualizer.file is not None
+                and self.visualizer.file.exists()
+                and self.visualizer.file.is_file()
+            )
+            media_label = "LOOPING VISUAL" if has_visualizer else "ALBUM ART"
+            write(
+                cursor(2, media_left + 1)
+                + f"{CSI}2m{truncate(media_label, media_width)}{CSI}0m"
+            )
+            write(cursor(2, list_left) + f"{CSI}2mPLAYLIST{CSI}0m")
+
+        for screen_row in range(list_top, list_bottom + 1):
+            index = self.scroll + (screen_row - list_top)
+            write(cursor(screen_row, list_left))
+            if index >= len(self.tracks):
+                write(" " * max(1, list_width))
+                continue
+            track = self.tracks[index]
+            selected = index == self.selected
+            playing = index == self.player.current_index and self.player.is_running()
+            marker = "▶" if playing else ("›" if selected else " ")
+            duration = format_time(track.duration)
+            number = f"{index + 1:>3}."
+            available = max(5, list_width - len(number) - len(duration) - 6)
+            label = truncate(f"{track.display_title} — {track.display_artist}", available)
+            line = f" {marker} {number} {label:<{available}}  {duration}"
+            if selected:
+                write(f"{CSI}7m{truncate(line, list_width):<{list_width}}{CSI}0m")
+            else:
+                write(f"{truncate(line, list_width):<{list_width}}")
+
+        if media_enabled:
+            has_visualizer = (
+                self.visualizer.enabled
+                and self.visualizer.file is not None
+                and self.visualizer.file.exists()
+                and self.visualizer.file.is_file()
+            )
+            if has_visualizer:
+                warning = self.visualizer_player.ensure(
+                    self.visualizer,
+                    left=media_left,
+                    top=media_top + 1,
+                    width=media_width,
+                    height=media_height,
+                )
+                if warning:
+                    self.flash(warning, 6.0)
+                self.last_art_track = None
+            else:
+                self.visualizer_player.stop()
+                preview = self.current_track() or self.selected_track()
+                art_path = thumbnail_path(preview)
+                if art_path is not None:
+                    render_image(
+                        art_path,
+                        media_left,
+                        media_top,
+                        media_width,
+                        media_height,
+                    )
+                    self.last_art_track = (
+                        self.player.current_index if self.current_track() else self.selected
+                    )
+                else:
+                    for row in range(
+                        media_top + 1, min(rows - 6, media_top + media_height + 1)
+                    ):
+                        write(cursor(row, media_left + 1) + " " * media_width)
+                    write(cursor(media_top + 2, media_left + 3) + "Thumbnail unavailable")
+        else:
+            self.visualizer_player.stop()
+
+        self.draw_status(force=True)
+        self.needs_full_redraw = False
+
+    def draw_status(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and now - self.last_status_draw < 0.25:
+            return
+        self.last_status_draw = now
+
+        rows, cols, _, _ = terminal_geometry()
+        if (rows, cols) != self.last_geometry:
+            self.needs_full_redraw = True
+            return
+        if rows < 12 or cols < 50:
+            return
+
+        track = self.current_track()
+        running = self.player.is_running()
+        paused = bool(self.player.get_property("pause", False)) if running else False
+        position = self.player.get_property("time-pos", 0.0) if running else 0.0
+        duration = self.player.get_property("duration", None) if running else None
+        if duration is None and track is not None:
+            duration = track.duration
+
+        status = "⏸ PAUSED" if paused else ("▶ PLAYING" if running else "■ STOPPED")
+        if track is None:
+            now_playing = "Nothing playing"
+        else:
+            now_playing = f"{track.display_title} — {track.display_artist}"
+
+        divider_row = rows - 5
+        write(cursor(divider_row, 1) + "─" * cols)
+        write(cursor(rows - 4, 2) + " " * max(1, cols - 2))
+        write(cursor(rows - 4, 2) + f"{CSI}1m{status}{CSI}0m  {truncate(now_playing, cols - len(status) - 7)}")
+
+        bar_width = max(10, cols - 35)
+        ratio = 0.0
+        try:
+            if duration and float(duration) > 0:
+                ratio = max(0.0, min(1.0, float(position or 0) / float(duration)))
+        except (TypeError, ValueError, ZeroDivisionError):
+            ratio = 0.0
+        filled = int(bar_width * ratio)
+        bar = "━" * filled + "─" * (bar_width - filled)
+        progress = f"{format_time(position)} {bar} {format_time(duration)}  Vol {self.player.volume:>3}%"
+        write(cursor(rows - 3, 2) + " " * max(1, cols - 2))
+        write(cursor(rows - 3, 2) + truncate(progress, cols - 3))
+
+        controls = "↑↓/jk select  Enter play  Space pause  ←→/hl seek  n/p track  +/- volume  e edit  r reload  q quit"
+        write(cursor(rows - 2, 2) + " " * max(1, cols - 2))
+        write(cursor(rows - 2, 2) + f"{CSI}2m{truncate(controls, cols - 3)}{CSI}0m")
+
+        if self.message and now < self.message_until:
+            write(cursor(rows, 2) + " " * max(1, cols - 2))
+            write(cursor(rows, 2) + f"{CSI}1m{truncate(self.message, cols - 3)}{CSI}0m")
+        else:
+            self.message = ""
+            write(cursor(rows, 2) + " " * max(1, cols - 2))
+
+    def check_player_end(self) -> None:
+        if not self.player.ended():
+            return
+        manual = self.player.manual_stop
+        error = self.player.consume_error()
+        finished_index = self.player.current_index
+        self.player.process = None
+        self.player._remove_socket()
+
+        if error:
+            self.flash(f"mpv: {error}", 5.0)
+            self.needs_full_redraw = True
+            return
+        if manual or not self.settings.auto_advance or finished_index is None:
+            self.needs_full_redraw = True
+            return
+        if finished_index + 1 < len(self.tracks):
+            self.play_index(finished_index + 1)
+        elif self.settings.loop:
+            self.play_index(0)
+        else:
+            self.flash("End of playlist")
+            self.needs_full_redraw = True
+
+    def run(self) -> None:
+        with Terminal() as terminal_session:
+            self.terminal = terminal_session
+            try:
+                while self.running:
+                    self.check_player_end()
+                    visualizer_error = self.visualizer_player.poll_error()
+                    if visualizer_error:
+                        self.flash(f"Visualizer: {visualizer_error}", 6.0)
+                    if self.needs_full_redraw:
+                        self.draw_full()
+                    else:
+                        self.draw_status()
+
+                    key = terminal_session.read_key(0.08)
+                    if key is not None:
+                        self.handle_key(key)
+            finally:
+                # Stop both mpv children before the alternate screen is restored,
+                # otherwise the visualizer could continue writing into the shell.
+                self.visualizer_player.stop(clear=True)
+                self.player.stop()
+        self.terminal = None
+
+
+def parse_config_path() -> Path:
+    if len(sys.argv) > 2 or (len(sys.argv) == 2 and sys.argv[1] in {"-h", "--help"}):
+        print(f"Usage: {Path(sys.argv[0]).name} [playlist.toml]")
+        print(f"Default playlist: {DEFAULT_CONFIG}")
+        raise SystemExit(0)
+    return Path(sys.argv[1]).expanduser() if len(sys.argv) == 2 else DEFAULT_CONFIG
+
+
+def main() -> int:
+    config_path = parse_config_path()
+    try:
+        settings, visualizer, tracks = load_config(config_path)
+        require_commands(visualizer)
+        hydrate_tracks(tracks)
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+    app = App(config_path, settings, visualizer, tracks)
+    if visualizer.enabled:
+        if visualizer.file is None:
+            app.flash("Visualizer is enabled but no file is configured.", 6.0)
+        elif not visualizer.file.exists() or not visualizer.file.is_file():
+            app.flash(f"Visualizer file not found: {visualizer.file}", 6.0)
+
+    def shutdown(_signum: int, _frame: Any) -> None:
+        app.running = False
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+    atexit.register(app.visualizer_player.stop)
+    atexit.register(app.player.stop)
+    app.run()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

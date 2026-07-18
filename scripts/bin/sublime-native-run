@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+set -u
+
+SESSION="sublime-build"
+FILE="${1:-}"
+
+if [[ -z "$FILE" || ! -f "$FILE" ]]; then
+    echo "Error: no valid source file was provided."
+    exit 1
+fi
+
+run_file() {
+    local file="$1"
+    local directory
+    local filename
+    local extension
+    local basename_no_ext
+    local output
+    local status
+
+    directory="$(dirname "$file")"
+    filename="$(basename "$file")"
+    extension="${filename##*.}"
+    basename_no_ext="${filename%.*}"
+
+    cd "$directory" || return 1
+
+    printf '\n'
+    printf 'Running: %s\n' "$filename"
+    printf 'Directory: %s\n' "$PWD"
+    printf '────────────────────────────────────────\n\n'
+
+    case "${extension,,}" in
+        py)
+            python "$filename"
+            status=$?
+            ;;
+
+        r)
+            Rscript "$filename"
+            status=$?
+            ;;
+
+        c)
+            output="/tmp/${basename_no_ext}-sublime-build"
+
+            if gcc -Wall -Wextra -std=c17 "$filename" -o "$output"; then
+                "$output"
+                status=$?
+            else
+                status=$?
+            fi
+
+            rm -f "$output"
+            ;;
+
+        cpp|cc|cxx|c++)
+            output="/tmp/${basename_no_ext}-sublime-build"
+
+            if g++ -Wall -Wextra -std=c++20 "$filename" -o "$output"; then
+                "$output"
+                status=$?
+            else
+                status=$?
+            fi
+
+            rm -f "$output"
+            ;;
+
+        *)
+            printf 'Unsupported file type: .%s\n' "$extension"
+            status=1
+            ;;
+    esac
+
+    printf '\n────────────────────────────────────────\n'
+    printf 'Process exited with status: %s\n\n' "$status"
+
+    return "$status"
+}
+
+# When called inside the persistent build terminal, run the file normally.
+if [[ "${SUBLIME_BUILD_WORKER:-0}" == "1" ]]; then
+    run_file "$FILE"
+    exit $?
+fi
+
+# Create the persistent tmux build session if it does not exist.
+if ! tmux has-session -t "$SESSION" 2>/dev/null; then
+    tmux new-session \
+        -d \
+        -s "$SESSION" \
+        -c "$(dirname "$FILE")"
+fi
+
+# Open Kitty only when the tmux session is not already visible.
+if ! tmux list-clients -t "$SESSION" 2>/dev/null | grep -q .; then
+    kitty \
+        --title "Sublime Build" \
+        tmux attach-session -t "$SESSION" \
+        >/dev/null 2>&1 &
+
+    sleep 0.5
+fi
+
+printf -v quoted_script '%q' "$0"
+printf -v quoted_file '%q' "$FILE"
+printf -v quoted_directory '%q' "$(dirname "$FILE")"
+
+command_to_run="cd $quoted_directory && clear && SUBLIME_BUILD_WORKER=1 $quoted_script $quoted_file"
+
+# Stop a currently running build before starting the next one.
+tmux send-keys -t "$SESSION":0.0 C-c
+tmux send-keys -t "$SESSION":0.0 "$command_to_run" Enter
