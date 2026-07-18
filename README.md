@@ -1,4 +1,4 @@
-# Addie's Arch Linux Dotfiles
+# My Arch Linux Dotfiles
 
 A GNU Stow-managed collection of configuration files for my Arch Linux desktop.
 
