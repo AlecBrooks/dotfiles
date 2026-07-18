@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+name="${1:-}"
+
+if [[ -z "$name" ]]; then
+    echo "Usage: newproject PROJECT_NAME"
+    exit 1
+fi
+
+project_dir="$PWD/$name"
+template_dir="$HOME/Templates/quarto"
+
+report_template="$template_dir/report.qmd"
+gitignore_template="$template_dir/gitignore.template"
+gitattributes_template="$template_dir/gitattributes.template"
+
+if [[ -e "$project_dir" ]]; then
+    echo "Error: $project_dir already exists."
+    exit 1
+fi
+
+if [[ ! -f "$report_template" ]]; then
+    echo "Error: report template not found at $report_template"
+    exit 1
+fi
+
+if [[ ! -f "$gitignore_template" ]]; then
+    echo "Error: gitignore template not found at $gitignore_template"
+    exit 1
+fi
+
+if [[ ! -f "$gitattributes_template" ]]; then
+    echo "Error: gitattributes template not found at $gitattributes_template"
+    exit 1
+fi
+
+mkdir -p "$project_dir"
+
+cp "$report_template" "$project_dir/report.qmd"
+cp "$gitignore_template" "$project_dir/.gitignore"
+cp "$gitattributes_template" "$project_dir/.gitattributes"
+
+cat > "$project_dir/_quarto.yml" <<'EOF'
+project:
+  type: default
+
+execute:
+  freeze: auto
+EOF
+
+printf '# %s\n' "$name" > "$project_dir/README.md"
+
+curl -fsSL \
+    https://www.gnu.org/licenses/gpl-3.0.txt \
+    -o "$project_dir/LICENSE"
+
+printf 'Created project:\n%s\n' "$project_dir"
+
+subl "$project_dir"

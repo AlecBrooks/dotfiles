@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+case "${1:-}" in
+    1) left=1; right=2 ;;
+    2) left=3; right=4 ;;
+    3) left=5; right=6 ;;
+    *)
+        echo "Usage: workspace-pair {1|2|3}"
+        exit 1
+        ;;
+esac
+
+original_monitor="$(
+    hyprctl monitors -j |
+    jq -r '.[] | select(.focused == true) | .name'
+)"
+
+hyprctl dispatch "hl.dsp.focus({ monitor = \"HDMI-A-1\" })"
+hyprctl dispatch "hl.dsp.focus({ workspace = \"$left\" })"
+
+hyprctl dispatch "hl.dsp.focus({ monitor = \"DP-3\" })"
+hyprctl dispatch "hl.dsp.focus({ workspace = \"$right\" })"
+
+hyprctl dispatch "hl.dsp.focus({ monitor = \"$original_monitor\" })"

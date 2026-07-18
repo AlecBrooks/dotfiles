@@ -1,0 +1,16 @@
+{
+    "shell_cmd": "/home/addie/bin/sublime-native-run \"$file\"",
+    "working_dir": "$file_path",
+    "file_patterns": [
+        "*.py",
+        "*.R",
+        "*.r",
+        "*.c",
+        "*.cpp",
+        "*.cc",
+        "*.cxx",
+        "*.c++"
+    ],
+    "selector": "source.python, source.r, source.c, source.c++",
+    "quiet": true
+}

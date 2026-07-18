@@ -1,0 +1,6 @@
+customCommands:
+  - key: '<c-g>'
+    context: 'global'
+    command: 'if pgrep -x sublime_text >/dev/null; then subl --command close_workspace; sleep 0.2; fi; subl .'
+    description: 'Open repository in Sublime'
+    output: none

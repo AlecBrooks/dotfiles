@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+
+file="${1:-}"
+rows=3
+columns=3
+
+if [[ -z "$file" || ! -f "$file" ]]; then
+    echo "Usage: csvhead FILE [ROWS] [COLUMNS]"
+    echo "   or: csvhead FILE ROWS,COLUMNS"
+    exit 1
+fi
+
+# Support:
+#   csvhead file.csv 10 5
+#   csvhead file.csv 10,5
+#   csvhead file.csv "10, 5"
+if [[ -n "${2:-}" ]]; then
+    if [[ "$2" == *,* ]]; then
+        dimensions="${2// /}"
+        rows="${dimensions%%,*}"
+        columns="${dimensions##*,}"
+    else
+        rows="$2"
+        columns="${3:-3}"
+    fi
+fi
+
+if ! [[ "$rows" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: ROWS must be a positive integer."
+    exit 1
+fi
+
+if ! [[ "$columns" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: COLUMNS must be a positive integer."
+    exit 1
+fi
+
+python - "$file" "$rows" "$columns" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+row_limit = int(sys.argv[2])
+column_limit = int(sys.argv[3])
+max_cell_width = 22
+
+with path.open("r", encoding="utf-8-sig", newline="") as handle:
+    reader = csv.reader(handle)
+
+    try:
+        full_header = next(reader)
+    except StopIteration:
+        print("CSV is empty.")
+        raise SystemExit(0)
+
+    total_columns = len(full_header)
+    header = full_header[:column_limit]
+
+    rows = []
+    for index, row in enumerate(reader):
+        if index >= row_limit:
+            break
+
+        selected = row[:column_limit]
+        selected += [""] * (len(header) - len(selected))
+        rows.append(selected)
+
+if not header:
+    print("CSV has no columns.")
+    raise SystemExit(0)
+
+
+def shorten(value: str, width: int) -> str:
+    value = value.replace("\n", " ").replace("\r", " ")
+
+    if len(value) <= width:
+        return value
+
+    if width <= 3:
+        return value[:width]
+
+    return value[: width - 3] + "..."
+
+
+widths = []
+
+for column_index, column_name in enumerate(header):
+    values = [column_name]
+
+    for row in rows:
+        values.append(row[column_index])
+
+    width = max(len(str(value)) for value in values)
+    widths.append(max(1, min(width, max_cell_width)))
+
+
+def border() -> str:
+    return "+" + "+".join("-" * (width + 2) for width in widths) + "+"
+
+
+def format_row(row: list[str]) -> str:
+    cells = []
+
+    for value, width in zip(row, widths):
+        text = shorten(str(value), width)
+        cells.append(f" {text:<{width}} ")
+
+    return "|" + "|".join(cells) + "|"
+
+
+print(border())
+print(format_row(header))
+print(border())
+
+for row in rows:
+    print(format_row(row))
+
+print(border())
+
+hidden_columns = max(0, total_columns - len(header))
+
+summary = (
+    f"{len(rows)} row{'s' if len(rows) != 1 else ''}, "
+    f"{len(header)} column{'s' if len(header) != 1 else ''} shown"
+)
+
+if hidden_columns:
+    summary += f" ({hidden_columns} hidden)"
+
+print(summary)
+PY

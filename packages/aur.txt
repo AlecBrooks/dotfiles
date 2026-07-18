@@ -1,0 +1,12 @@
+github-desktop-bin
+gruvbox-gtk-theme-git
+kvantum-theme-gruvbox-git
+pinta
+python-obsws
+qt5ct-kde
+qt6ct-kde
+quarto-cli-bin
+simple-linux-wallpaperengine-gui-git
+yay-bin
+yay-bin-debug
+zen-browser-bin

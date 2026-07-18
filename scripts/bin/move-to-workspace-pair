@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+case "${1:-}" in
+    1) left=1; right=2 ;;
+    2) left=3; right=4 ;;
+    3) left=5; right=6 ;;
+    *)
+        echo "Usage: move-to-workspace-pair {1|2|3}"
+        exit 1
+        ;;
+esac
+
+monitor_id="$(hyprctl activewindow -j | jq -r '.monitor')"
+
+hdmi_id="$(
+    hyprctl monitors -j |
+    jq -r '.[] | select(.name == "HDMI-A-1") | .id'
+)"
+
+if [[ "$monitor_id" == "$hdmi_id" ]]; then
+    target="$left"
+else
+    target="$right"
+fi
+
+hyprctl dispatch \
+    "hl.dsp.window.move({ workspace = \"$target\", follow = false })"

@@ -1,0 +1,79 @@
+# Add one [[tracks]] block per YouTube song/video.
+# title and artist are optional overrides. If omitted, yt-dlp fills them in.
+
+[settings]
+name = "ytJukeBox"
+volume = 75
+loop = false
+auto_advance = true
+album_art = true
+art_width = 21
+art_height = 9
+seek_seconds = 5
+
+[visualizer]
+enabled = true
+file = "/home/addie/Videos/ytjukebox/vis.mp4"
+width = 40
+height = 18
+fps = 60
+
+[[tracks]]
+url = "https://youtu.be/Pk8DA-xKMxg?si=dgttuNzmu_yGa1Gy"
+title = "𝟭𝟵𝟴𝟳 𝗠𝗔𝗥𝗞 𝗧𝗛𝗘 𝗠𝗢𝗠𝗘𝗡𝗧"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://youtu.be/0nODU8Mterg?si=6fRZue9SzNtG9ykG"
+title = "𝟭𝟵𝟴𝟵 𝗧𝗥𝗔𝗣𝗣𝗘𝗗 𝗜𝗡 𝗧𝗢𝗞𝗬𝗢"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://youtu.be/wjbVhOksfYg?si=1ox17zuGLjphepOR"
+title = "𝟭𝟵𝟵𝟭 𝗗𝗥𝗘𝗔𝗠𝗦 𝗕𝗘𝗬𝗢𝗡𝗗 𝗖𝗜𝗥𝗖𝗨𝗜𝗧𝗦"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://youtu.be/1DMTQnG-7cs?si=Gc7owXmXQr0GDBT8"
+title = "𝟭𝟵𝟵𝟰 𝗢𝗨𝗧𝗥𝗨𝗡 𝗧𝗛𝗘 𝗣𝗔𝗦𝗧"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://youtu.be/lnpQPm4GcGI?si=mle7iFGHCE5Ewqw_"
+title = "𝟭𝟵𝟵𝟲 𝗘𝗦𝗖𝗔𝗣𝗘 𝗙𝗥𝗢𝗠 𝗗𝗔𝗧𝗔 𝗖𝗜𝗧𝗬"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://youtu.be/OjsUaunN81c?si=qm4KQU85x2C83v_5"
+title = "𝟭𝟵𝟵𝟴 𝗖𝗢𝗗𝗘 𝗕𝗘𝗖𝗢𝗠𝗘𝗦 𝗖𝗢𝗡𝗦𝗖𝗜𝗢𝗨𝗦"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://www.youtube.com/watch?v=HpyVBF03vI8"
+title = "𝟭𝟵𝟵𝟵 𝗠𝗘𝗠𝗢𝗥𝗬 𝗡𝗢𝗧 𝗙𝗢𝗨𝗡𝗗"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://youtu.be/jUyk52REKKg?si=NPwULnzu7JbRNIIg"
+title = "𝟭𝟵𝟵𝟵 𝗠𝗢𝗠𝗘𝗡𝗧𝗨𝗠 𝗢𝗩𝗘𝗥 𝗙𝗘𝗔𝗥"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://youtu.be/u1jICOLIP1A?si=ZCgvWE-IojjtUDne"
+title = "𝟭𝟵𝟵𝟵 𝗖𝗥𝗔𝗦𝗛 𝗧𝗛𝗘 𝗡𝗘𝗧𝗪𝗢𝗥𝗞"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://youtu.be/_Gajv2yJt5M?si=nkPn5gIUWlqYA35t"
+title = "𝟭𝟵𝟵𝟵 𝗗𝗥𝗜𝗙𝗧 𝗜𝗡𝗧𝗢 𝗠𝗘𝗠𝗢𝗥𝗬"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://youtu.be/DG5N4ARcHEI?si=ps6vbK5LKxrBbLgR"
+title = "𝟮𝟬𝟳𝟳 𝗕𝗨𝗥𝗡 𝗧𝗛𝗘 𝗣𝗔𝗦𝗧"
+artist = "Moebius FM"
+
+[[tracks]]
+url = "https://youtu.be/6xLxC7a1_fU?si=NHNYLgET3csMDTO3"
+title = "𝟮𝟬𝟵𝟲 𝗘𝗦𝗖𝗔𝗣𝗘 𝗧𝗛𝗘 𝗗𝗥𝗢𝗡𝗘𝗦"
+artist = "Moebius FM"
