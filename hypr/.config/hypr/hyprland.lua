@@ -124,11 +124,12 @@ hl.on("hyprland.start", function ()
         "sleep 2; " ..
         "waybar >/tmp/waybar.log 2>&1 & " ..
         "sleep 2; " ..
-        "discord --start-minimized >/tmp/discord.log 2>&1 &" ..
+        "discord --start-minimized >/tmp/discord.log 2>&1 & " ..
+        "sleep 3; " ..
+        "protonvpn-app >/tmp/protonvpn.log 2>&1 &" ..
         "'"
     )
 end)
-
 
 
 
@@ -346,6 +347,7 @@ hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))    -- dwindle only
+hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("hyprlock"))
 
 -- Move focus with mainMod + arrow keys
 hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }))
