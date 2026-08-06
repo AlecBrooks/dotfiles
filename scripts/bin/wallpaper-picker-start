@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+for ((attempt = 1; attempt <= 50; attempt++)); do
+    if "/usr/bin/hyprctl" monitors -j >/dev/null 2>&1; then
+        exec "/home/mythra/.local/bin/wallpaper-picker" --apply
+    fi
+
+    sleep 0.2
+done
+
+echo "Hyprland was not ready after 10 seconds." >&2
+exit 1
