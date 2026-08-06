@@ -11,6 +11,9 @@
 # OBS websocket password
 scripts/bin/obs-password
 
+# Passphrase helper
+scripts/bin/pass
+
 # Python
 **/__pycache__/
 **/*.pyc
