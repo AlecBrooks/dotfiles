@@ -13,7 +13,7 @@ seek_seconds = 5
 
 [visualizer]
 enabled = true
-file = "/home/addie/Videos/ytjukebox/vis.mp4"
+file = "/home/mythra/Videos/ytjukebox/vis.mp4"
 width = 40
 height = 18
 fps = 60

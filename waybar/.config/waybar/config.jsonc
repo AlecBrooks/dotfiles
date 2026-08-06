@@ -45,8 +45,8 @@
     // },
 
     "cava": {
-        "cava_config": "/home/addie/dotfiles/waybar/cava.conf",
-        "hide_on_silence": true,
+        "cava_config": "$HOME/.config/waybar/cava.conf",
+        "hide_on_silence": false,
         "format-icons": [
             "▁",
             "▂",

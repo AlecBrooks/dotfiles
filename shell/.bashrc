@@ -13,4 +13,4 @@ export PATH="$HOME/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # Created by `pipx` on 2026-07-18 23:39:18
-export PATH="$PATH:/home/addie/.local/bin"
+export PATH="$PATH:/home/mythra/.local/bin"

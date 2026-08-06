@@ -72,16 +72,39 @@ local menu        = "hyprlauncher"
 -------------------
 
 hl.on("hyprland.start", function ()
+    -- Wallpaper
     hl.exec_cmd(
-        "sh -lc '" ..
-        "wallpaper-picker-start >/tmp/linux-wallpaperengine.log 2>&1; " ..
-        "sleep 2; " ..
-        "discord --start-minimized >/tmp/discord.log 2>&1 & " ..
-        "sleep 3; " ..
-        "protonvpn-app >/tmp/protonvpn.log 2>&1 & " ..
-        "sleep 2; " ..
-        "mathpix-snip >/tmp/mathpix.log 2>&1 &" ..
-        "'"
+        "sh -lc 'systemctl --user start wallpaper-picker-start >/tmp/linux-wallpaperengine.log 2>&1 &'"
+    )
+
+    -- VPN
+    hl.exec_cmd(
+        "sh -lc 'sleep 1; protonvpn-app >/tmp/protonvpn.log 2>&1 &'"
+    )
+
+    -- Proton Pass
+    hl.exec_cmd(
+        "sh -lc 'sleep 5; proton-pass &'"
+    )
+
+    -- Discord
+    hl.exec_cmd(
+        "sh -lc 'sleep 6; until curl -fsS --max-time 5 https://discord.com/api/v10/gateway >/dev/null; do sleep 2; done; discord --disable-gpu --start-minimized >/tmp/discord.log 2>&1 &'"
+    )
+
+    -- Steam
+    hl.exec_cmd(
+        "sh -lc 'sleep 7; steam -silent >/tmp/steam.log 2>&1 &'"
+    )
+
+    -- Signal
+    hl.exec_cmd(
+        "sh -lc 'sleep 8; signal-desktop --start-in-tray >/tmp/signal.log 2>&1 &'"
+    )
+
+    -- Proton mail
+    hl.exec_cmd(
+        "sh -lc 'sleep 9; proton-mail >/tmp/proton-mail.log 2>&1 &'"
     )
 end)
 
@@ -279,14 +302,14 @@ hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }))
 hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }))
 
 -- Switch both monitors as one logical desktop
-hl.bind(mainMod .. " + 1", hl.dsp.exec_cmd("/home/addie/bin/workspace-pair 1"))
-hl.bind(mainMod .. " + 2", hl.dsp.exec_cmd("/home/addie/bin/workspace-pair 2"))
-hl.bind(mainMod .. " + 3", hl.dsp.exec_cmd("/home/addie/bin/workspace-pair 3"))
+hl.bind(mainMod .. " + 1", hl.dsp.exec_cmd("/home/mythra/bin/workspace-pair 1"))
+hl.bind(mainMod .. " + 2", hl.dsp.exec_cmd("/home/mythra/bin/workspace-pair 2"))
+hl.bind(mainMod .. " + 3", hl.dsp.exec_cmd("/home/mythra/bin/workspace-pair 3"))
 
 -- Move the focused window to the same monitor on another logical desktop
-hl.bind(mainMod .. " + SHIFT + 1", hl.dsp.exec_cmd("/home/addie/bin/move-to-workspace-pair 1"))
-hl.bind(mainMod .. " + SHIFT + 2", hl.dsp.exec_cmd("/home/addie/bin/move-to-workspace-pair 2"))
-hl.bind(mainMod .. " + SHIFT + 3", hl.dsp.exec_cmd("/home/addie/bin/move-to-workspace-pair 3"))
+hl.bind(mainMod .. " + SHIFT + 1", hl.dsp.exec_cmd("/home/mythra/bin/move-to-workspace-pair 1"))
+hl.bind(mainMod .. " + SHIFT + 2", hl.dsp.exec_cmd("/home/mythra/bin/move-to-workspace-pair 2"))
+hl.bind(mainMod .. " + SHIFT + 3", hl.dsp.exec_cmd("/home/mythra/bin/move-to-workspace-pair 3"))
 
 -- Move/resize windows with mainMod + LMB/RMB and dragging
 hl.bind(mainMod .. " + mouse:272", hl.dsp.window.drag(),   { mouse = true })
@@ -322,7 +345,8 @@ local suppressMaximizeRule = hl.window_rule({
 
     suppress_event = "maximize",
 })
--- suppressMaximizeRule:set_enabled(false)
+
+suppressMaximizeRule:set_enabled(false)
 
 hl.window_rule({
     -- Fix some dragging issues with XWayland
@@ -339,14 +363,6 @@ hl.window_rule({
     no_focus = true,
 })
 
--- Layer rules also return a handle.
--- local overlayLayerRule = hl.layer_rule({
---     name  = "no-anim-overlay",
---     match = { namespace = "^my-overlay$" },
---     no_anim = true,
--- })
--- overlayLayerRule:set_enabled(false)
-
 -- Hyprland-run windowrule
 hl.window_rule({
     name  = "move-hyprland-run",
@@ -362,7 +378,7 @@ hl.window_rule({
     match = {
         class = "^(zen|zen-alpha|zen-browser)$",
     },
-    opacity = "0.94 override 0.91 override 1.0 override",
+    opacity = "1 override 1 override 1 override",
 })
 
 -- Slight transparency for Sublime Text
@@ -383,11 +399,20 @@ hl.window_rule({
     opacity = "0.94 override 0.91 override 1.0 override",
 })
 
--- Slight transparency for Discord
+-- Slight transparency for Thunderbird
 hl.window_rule({
-    name = "transparent-discord",
+    name = "transparent-thunderbird",
     match = {
-        class = "discord",
+        class = "org.mozilla.Thunderbird",
+    },
+    opacity = "0.94 override 0.91 override 1.0 override",
+})
+
+-- Slight transparency for Signal
+hl.window_rule({
+    name = "transparent-signal",
+    match = {
+        class = "signal",
     },
     opacity = "0.94 override 0.91 override 1.0 override",
 })
