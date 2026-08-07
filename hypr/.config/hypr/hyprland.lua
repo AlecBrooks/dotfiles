@@ -399,15 +399,6 @@ hl.window_rule({
     opacity = "0.94 override 0.91 override 1.0 override",
 })
 
--- Slight transparency for Thunderbird
-hl.window_rule({
-    name = "transparent-thunderbird",
-    match = {
-        class = "org.mozilla.Thunderbird",
-    },
-    opacity = "0.94 override 0.91 override 1.0 override",
-})
-
 -- Slight transparency for Signal
 hl.window_rule({
     name = "transparent-signal",
