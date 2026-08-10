@@ -7,6 +7,8 @@
 
 alias ls='ls --color=auto'
 alias grep='grep --color=auto'
+export EDITOR=nvim
+export VISUAL=nvim
 PS1='[\u@\h \W]\$ '
 eval "$(starship init bash)"
 export PATH="$HOME/bin:$PATH"

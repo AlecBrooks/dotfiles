@@ -18,6 +18,7 @@ STOW_PACKAGES=(
   gtk
   ytjukebox
   scripts
+  nvim
 )
 
 MANAGED_PATHS=(
@@ -29,6 +30,7 @@ MANAGED_PATHS=(
   ".config/yazi"
   ".config/lazygit"
   ".config/helix"
+  ".config/nvim"
   ".config/sublime-text/Packages/User"
   ".config/gtk-3.0"
   ".config/gtk-4.0"
