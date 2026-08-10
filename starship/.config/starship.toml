@@ -30,14 +30,14 @@ $pixi\
 $time\
 [ ](fg:color_bg1)\
 $line_break\
-[ ╰──](bold fg:color_orange)\
+[ ╰─](bold fg:color_orange)\
 $character"""
 
 palette = 'gruvbox_dark'
 
 [palettes.gruvbox_dark]
 color_fg0 = '#fbf1c7'
-color_bg1 = '#282828'
+color_bg1 = '#3c3836'
 color_bg3 = '#8cc4dc'
 color_blue = '#6ba8c0'
 color_aqua = '#52899f'
