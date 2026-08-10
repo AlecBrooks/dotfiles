@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TOKEN_FILE="$HOME/.config/mystatus/token"
+
+if [[ $# -eq 0 ]]; then
+    echo "usage: mystatus 'message here'" >&2
+    exit 1
+fi
+
+if [[ ! -f "$TOKEN_FILE" ]]; then
+    echo "mystatus: token file not found at $TOKEN_FILE" >&2
+    exit 1
+fi
+
+message="$*"
+token="$(cat "$TOKEN_FILE")"
+
+response="$(curl -s -w '\n%{http_code}' -X POST "https://status.abrooks.dev/status" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    --data-binary "$(python3 -c 'import json,sys; print(json.dumps({"message": sys.argv[1]}))' "$message")")"
+
+code="$(tail -n1 <<<"$response")"
+body="$(sed '$d' <<<"$response")"
+
+if [[ "$code" != "200" ]]; then
+    echo "mystatus: failed ($code): $body" >&2
+    exit 1
+fi
+
+echo "status set: $message"

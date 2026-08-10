@@ -64,7 +64,7 @@ hl.workspace_rule({
 
 -- Set programs that you use
 local terminal    = "kitty"
-local fileManager = "dolphin"
+local fileManager = "pcmanfm-qt"
 local menu        = "hyprlauncher"
 
 -------------------
@@ -128,7 +128,7 @@ hl.config({
         border_size = 2,
 
         col = {
-            active_border   = { colors = {"rgba(33ccffee)", "rgba(00ff99ee)"}, angle = 45 },
+            active_border   = { colors = {"rgba(6ba8c0ee)", "rgba(46b98bee)"}, angle = 45 },
             inactive_border = "rgba(595959aa)",
         },
 
@@ -142,8 +142,8 @@ hl.config({
     },
 
     decoration = {
-        rounding       = 10,
-        rounding_power = 2,
+        rounding       = 0,
+        rounding_power = 0,
 
         -- Change transparency of focused and unfocused windows
         active_opacity   = 1.0,
@@ -363,47 +363,47 @@ hl.window_rule({
     no_focus = true,
 })
 
--- Hyprland-run windowrule
-hl.window_rule({
-    name  = "move-hyprland-run",
-    match = { class = "hyprland-run" },
+-- -- Hyprland-run windowrule
+-- hl.window_rule({
+--     name  = "move-hyprland-run",
+--     match = { class = "hyprland-run" },
 
-    move  = "20 monitor_h-120",
-    float = true,
-})
+--     move  = "20 monitor_h-120",
+--     float = true,
+-- })
 
--- Slight transparency for Zen Browser
-hl.window_rule({
-    name = "transparent-zen",
-    match = {
-        class = "^(zen|zen-alpha|zen-browser)$",
-    },
-    opacity = "1 override 1 override 1 override",
-})
+-- -- Slight transparency for Zen Browser
+-- hl.window_rule({
+--     name = "transparent-zen",
+--     match = {rounding
+--         class = "^(zen|zen-alpha|zen-browser)$",
+--     },
+--     opacity = "1 override 1 override 1 override",
+-- })
 
--- Slight transparency for Sublime Text
-hl.window_rule({
-    name = "transparent-sublime",
-    match = {
-        class = "^(sublime_text|sublime-text)$",
-    },
-    opacity = "0.94 override 0.91 override 1.0 override",
-})
+-- -- Slight transparency for Sublime Text
+-- hl.window_rule({
+--     name = "transparent-sublime",
+--     match = {
+--         class = "^(sublime_text|sublime-text)$",
+--     },
+--     opacity = "0.94 override 0.91 override 1.0 override",
+-- })
 
--- Slight transparency for Obsidian
-hl.window_rule({
-    name = "transparent-obsidian",
-    match = {
-        class = "obsidian",
-    },
-    opacity = "0.94 override 0.91 override 1.0 override",
-})
+-- -- Slight transparency for Obsidian
+-- hl.window_rule({
+--     name = "transparent-obsidian",
+--     match = {
+--         class = "obsidian",
+--     },
+--     opacity = "0.94 override 0.91 override 1.0 override",
+-- })
 
--- Slight transparency for Signal
-hl.window_rule({
-    name = "transparent-signal",
-    match = {
-        class = "signal",
-    },
-    opacity = "0.94 override 0.91 override 1.0 override",
-})
+-- -- Slight transparency for Signal
+-- hl.window_rule({
+--     name = "transparent-signal",
+--     match = {
+--         class = "signal",
+--     },
+--     opacity = "0.94 override 0.91 override 1.0 override",
+-- })
