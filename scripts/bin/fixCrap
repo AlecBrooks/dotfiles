@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Kill and relaunch ProtonVPN (GUI + daemon) and Discord, in one go.
+set -uo pipefail
+
+log() { echo "==> $*"; }
+
+kill_vpn() {
+    log "Killing ProtonVPN GUI + daemon..."
+    pkill -x protonvpn-app 2>/dev/null
+    systemctl stop proton.VPN.service
+}
+
+kill_discord() {
+    log "Killing Discord..."
+    pkill -x Discord 2>/dev/null
+
+    local waited=0
+    while pgrep -x Discord >/dev/null 2>&1 && [ "$waited" -lt 15 ]; do
+        sleep 1
+        waited=$((waited + 1))
+    done
+    if pgrep -x Discord >/dev/null 2>&1; then
+        log "Discord still alive after ${waited}s, sending SIGKILL"
+        pkill -9 -x Discord 2>/dev/null
+    fi
+}
+
+wait_for_discord() {
+    # Discord's process forks almost instantly, but the actual window (past
+    # any update download + splash) can take well over a minute to map.
+    # Poll Hyprland for a real "discord"-class window and require its title
+    # to stay put for 3s straight before calling it done, so we don't return
+    # while it's still mid-splash/loading.
+    log "Waiting for Discord's window to fully load..."
+    local timeout=120
+    local waited=0
+    local last_title=""
+    local stable=0
+
+    while [ "$waited" -lt "$timeout" ]; do
+        local title
+        title=$(hyprctl clients -j 2>/dev/null \
+            | jq -r '.[] | select((.class // "") | ascii_downcase == "discord") | select(.mapped == true) | .title' \
+            | head -1)
+
+        if [ -n "$title" ]; then
+            if [ "$title" = "$last_title" ]; then
+                stable=$((stable + 1))
+            else
+                stable=0
+                last_title="$title"
+            fi
+            if [ "$stable" -ge 3 ]; then
+                log "Discord is open: \"$title\""
+                return 0
+            fi
+        fi
+
+        sleep 1
+        waited=$((waited + 1))
+        if [ $((waited % 15)) -eq 0 ]; then
+            log "...still waiting on Discord (${waited}s)"
+        fi
+    done
+
+    log "Timed out after ${timeout}s waiting for Discord's window — continuing anyway"
+    return 1
+}
+
+start_discord() {
+    log "Starting Discord..."
+    nohup discord >/dev/null 2>&1 &
+    disown
+    wait_for_discord
+}
+
+start_vpn() {
+    log "Starting ProtonVPN daemon + GUI..."
+    systemctl start proton.VPN.service
+    nohup protonvpn-app >/dev/null 2>&1 &
+    disown
+    log "ProtonVPN started"
+}
+
+kill_vpn
+kill_discord
+start_discord
+start_vpn
+
+log "Done."

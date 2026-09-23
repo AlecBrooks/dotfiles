@@ -1,0 +1,282 @@
+#!/usr/bin/env python3
+"""airbender-logo: the Air Nomad symbol as an animated GIF -- three swirls, each spinning on its
+own axis (optional particles via --particles N; off by default).
+
+Built for fastfetch's `kitty-icat` logo: kitty plays animated GIFs natively.
+
+  * The symbol itself holds still: two swirls on top, one below (like the real emblem).
+  * Every swirl spins CLOCKWISE around its own center. A spiral only returns to its starting pose
+    after a full turn, so one loop = one full turn per swirl; their starting angles are offset so
+    they clearly move independently.
+  * Optional (--particles N, default 0): small particles are shed from the swirls' tail tips, drift outward along the spin
+    direction, and fade out. Each lives exactly one loop, so the animation loops seamlessly.
+
+Edges are anti-aliased against the terminal background (default #282828) and the background
+itself is left transparent, so it also works if kitty's opacity is changed.
+
+Usage: airbender-logo [--out FILE] [--color '#rrggbb'] [--bg '#282828'] [--size 540]
+                      [--frames 60] [--ms 60] [--particles 0] [--still FILE.png [--t 0.25]]
+       --color defaults to the current theme's primary (~/.cache/wallpaper-theme/.colors.json)
+       --still  writes one PNG (loop position --t, 0..1) instead of a GIF, for tuning the drawing
+"""
+import argparse
+import json
+import math
+import os
+import random
+import sys
+
+import cairo
+from PIL import Image
+
+# ---- shape parameters (tuned by eye against the real symbol) --------------------------------
+SWIRL_TURNS = 1.55        # how many turns each spiral makes
+INNER_R = 0.020           # spiral radius at its inner end   (fractions of the canvas size)
+OUTER_R = 0.205           # spiral radius at its outer end
+CENTER_DIST = 0.235       # distance of each swirl's center from the symbol's center
+START_ANGLE = 0.30        # where (rad) the inner end of the spiral starts
+MAX_WIDTH = 0.082         # stroke width at its thickest
+POINTS = 500
+BASE_ROTATION = math.pi   # static pose: two swirls on top, one at the bottom
+SCALE = 0.78              # shrink the symbol so particles have room to drift without clipping
+Y_SHIFT = -0.067          # lift the drawing (fraction of the canvas): the bottom swirl hangs lower, so the
+                          # symbol's visible weight sits below the canvas center without this
+
+# ---- motion ------------------------------------------------------------------------------------
+SPIN_TURNS = (1, 1, 1)                    # full clockwise turns per loop, per swirl
+SPIN_PHASE = (0.0, 1 / 3, 2 / 3)          # starting offsets (fraction of a turn): independent look
+
+# ---- particles ---------------------------------------------------------------------------------
+PARTICLE_SEED = 7
+TRAVEL = (0.10, 0.15)                     # how far they drift (fractions of the canvas)
+RADIUS = (0.009, 0.016)                  # dot radius (fractions of the canvas)
+WOBBLE = (0.008, 0.016)                   # sideways sway amplitude
+LIFT = (0.0, 0.05)                        # extra upward float
+
+
+def swirl_points(size):
+    """Centerline points + half-widths of ONE swirl (outward spiral), centered on (0,0)."""
+    total = SWIRL_TURNS * 2 * math.pi
+    pts, widths = [], []
+    for i in range(POINTS + 1):
+        u = i / POINTS                                    # 0 = inner end, 1 = outer tip
+        phi = u * total
+        # radius grows a little faster than linear near the end so the tail sweeps outward
+        r = (INNER_R + (OUTER_R - INNER_R) * (u ** 1.15)) * size
+        a = START_ANGLE - phi                             # winds clockwise going outward
+        pts.append((r * math.cos(a), -r * math.sin(a)))
+        # width: rounded blob at the inner hook, thickest around 60%, sharp tip at the end
+        w = (0.55 + 0.45 * math.sin(min(1.0, u / 0.6) * math.pi / 2)) * (1 - u ** 3.2)
+        widths.append(max(0.0, w) * MAX_WIDTH * size / 2)
+    return pts, widths
+
+
+def spiral_polygon(size):
+    """Outline polygon of one swirl (tapered stroke), its inner-hook center and radius."""
+    pts, widths = swirl_points(size)
+    left, right = [], []
+    for i, (x, y) in enumerate(pts):
+        x0, y0 = pts[max(0, i - 1)]
+        x1, y1 = pts[min(POINTS, i + 1)]
+        dx, dy = x1 - x0, y1 - y0
+        n = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / n, dx / n
+        left.append((x + nx * widths[i], y + ny * widths[i]))
+        right.append((x - nx * widths[i], y - ny * widths[i]))
+    return left + right[::-1], pts[0], widths[0]
+
+
+def rot(angle, x, y):
+    c, s = math.cos(angle), math.sin(angle)
+    return c * x - s * y, s * x + c * y                   # positive = clockwise (y points down)
+
+
+def spin_angle(k, t):
+    """Swirl k's own clockwise spin (radians) at loop position t in [0, 1)."""
+    return 2 * math.pi * (SPIN_PHASE[k] + SPIN_TURNS[k] * t)
+
+
+def swirl_center(k, size):
+    return rot(BASE_ROTATION + k * 2 * math.pi / 3, 0.0, -CENTER_DIST * size)
+
+
+def to_canvas(k, t, size, px, py):
+    """Map a swirl-local point to symbol space (origin = symbol center) at loop position t."""
+    cx, cy = swirl_center(k, size)
+    x, y = rot(BASE_ROTATION + k * 2 * math.pi / 3 + spin_angle(k, t), px, py)
+    return cx + x, cy + y
+
+
+def make_particles(size, count):
+    """Deterministic particle set: each is shed from one swirl's tail tip once per loop."""
+    rng = random.Random(PARTICLE_SEED)
+    tip_pts, _ = swirl_points(size)
+    tip = tip_pts[-1]
+    parts = []
+    for j in range(count):
+        k = j % 3
+        phase = (j + rng.random() * 0.5) / count           # staggered so there's a steady trickle
+        ox, oy = to_canvas(k, phase, size, *tip)           # where the tip is when it's shed
+        # direction: mostly along the clockwise tangent of the spin, some outward, a little up
+        tx, ty = rot(BASE_ROTATION + k * 2 * math.pi / 3 + spin_angle(k, phase), -tip[1], tip[0])
+        n = math.hypot(tx, ty) or 1.0
+        cx, cy = swirl_center(k, size)
+        ux, uy = ox - cx, oy - cy
+        m = math.hypot(ux, uy) or 1.0
+        dx = 0.65 * tx / n + 0.35 * ux / m
+        dy = 0.65 * ty / n + 0.35 * uy / m
+        d = math.hypot(dx, dy) or 1.0
+        parts.append(dict(
+            origin=(ox, oy), dir=(dx / d, dy / d),
+            phase=phase,
+            travel=rng.uniform(*TRAVEL) * size,
+            radius=rng.uniform(*RADIUS) * size,
+            wobble=rng.uniform(*WOBBLE) * size * rng.choice((-1, 1)),
+            freq=rng.choice((1, 2)),
+            lift=rng.uniform(*LIFT) * size,
+        ))
+    return parts
+
+
+def smoothstep(a, b, x):
+    u = max(0.0, min(1.0, (x - a) / (b - a)))
+    return u * u * (3 - 2 * u)
+
+
+def draw(ctx, size, t, particles):
+    """One frame at loop position t (0..1)."""
+    ctx.save()
+    ctx.translate(size / 2, size / 2 + Y_SHIFT * size)
+    ctx.scale(SCALE, SCALE)
+    ctx.set_source_rgb(1, 1, 1)
+
+    poly, inner, inner_w = spiral_polygon(size)
+    for k in range(3):
+        ctx.save()
+        ctx.rotate(BASE_ROTATION + k * 2 * math.pi / 3)
+        ctx.translate(0, -CENTER_DIST * size)                # to this swirl's own center
+        ctx.rotate(spin_angle(k, t))                         # ...and spin it there, clockwise
+        ctx.move_to(*poly[0])
+        for p in poly[1:]:
+            ctx.line_to(*p)
+        ctx.close_path()
+        ctx.fill()
+        ctx.arc(inner[0], inner[1], inner_w, 0, 2 * math.pi)  # round the inner hook
+        ctx.fill()
+        ctx.restore()
+
+    for p in particles:
+        a = (t - p["phase"]) % 1.0                           # age: 0 at birth .. 1 at death
+        ease = 1 - (1 - a) ** 2                              # decelerating drift
+        alpha = smoothstep(0.0, 0.12, a) * (1 - smoothstep(0.55, 1.0, a)) * 1.0
+        if alpha <= 0.01:
+            continue
+        px = p["origin"][0] + p["dir"][0] * p["travel"] * ease
+        py = p["origin"][1] + p["dir"][1] * p["travel"] * ease
+        sway = p["wobble"] * math.sin(2 * math.pi * p["freq"] * a)
+        px += -p["dir"][1] * sway
+        py += p["dir"][0] * sway - p["lift"] * ease
+        ctx.set_source_rgba(1, 1, 1, alpha)
+        ctx.arc(px, py, p["radius"] * (1 - 0.45 * a), 0, 2 * math.pi)
+        ctx.fill()
+    ctx.restore()
+
+
+def coverage_frame(size, t, particles, ss=3):
+    """Render one frame as a 0..255 coverage mask (anti-aliased by supersampling)."""
+    big = size * ss
+    surf = cairo.ImageSurface(cairo.FORMAT_A8, big, big)
+    ctx = cairo.Context(surf)
+    ctx.set_antialias(cairo.ANTIALIAS_BEST)
+    draw(ctx, big, t, [dict(p, origin=(p["origin"][0] * ss / 1.0, p["origin"][1] * ss / 1.0),
+                            travel=p["travel"] * ss, radius=p["radius"] * ss,
+                            wobble=p["wobble"] * ss, lift=p["lift"] * ss) for p in particles])
+    surf.flush()
+    stride = surf.get_stride()
+    img = Image.frombuffer("L", (big, big), bytes(surf.get_data()), "raw", "L", stride, 1)
+    return img.resize((size, size), Image.LANCZOS)
+
+
+def hex_to_rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def default_color():
+    try:
+        c = json.load(open(os.path.expanduser("~/.cache/wallpaper-theme/.colors.json")))["colors"]
+        return c["primary"]["default"]["color"]
+    except (OSError, KeyError, ValueError):
+        return "#84afcd"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--out", default=os.path.expanduser("~/.config/fastfetch/airbender.gif"))
+    ap.add_argument("--color", default=None)
+    ap.add_argument("--bg", default="#282828")
+    ap.add_argument("--size", type=int, default=540)
+    ap.add_argument("--frames", type=int, default=60)
+    ap.add_argument("--ms", type=int, default=60)
+    ap.add_argument("--particles", type=int, default=0)
+    ap.add_argument("--still", default=None)
+    ap.add_argument("--icon", default=None, help="write a small transparent RGBA PNG of the symbol (for Waybar) and exit")
+    ap.add_argument("--t", type=float, default=0.0)
+    args = ap.parse_args()
+
+    fg = hex_to_rgb(args.color or default_color())
+    bg = hex_to_rgb(args.bg)
+    # particle geometry is computed once at unit size 1000 and scaled per render
+    particles = make_particles(args.size, args.particles)
+
+    if args.icon:
+        global SCALE, Y_SHIFT
+        SCALE, Y_SHIFT = 1.0, 0.0                      # fill the canvas; we crop to the drawing below
+        mask = coverage_frame(256, 0.0, [])
+        box = mask.point(lambda v: 255 if v > 8 else 0).getbbox()
+        mask = mask.crop(box)
+        side = max(mask.size)
+        square = Image.new("L", (side, side), 0)
+        square.paste(mask, ((side - mask.width) // 2, (side - mask.height) // 2))
+        out = Image.new("RGBA", (side, side), fg + (0,))
+        out.putalpha(square)
+        out = out.resize((64, 64), Image.LANCZOS)
+        os.makedirs(os.path.dirname(os.path.abspath(args.icon)), exist_ok=True)
+        out.save(args.icon)
+        print(f"wrote icon {args.icon}")
+        return 0
+
+    if args.still:
+        mask = coverage_frame(args.size, args.t, particles)
+        out = Image.new("RGB", (args.size, args.size), bg)
+        out.paste(Image.new("RGB", (args.size, args.size), fg), mask=mask)
+        out.save(args.still)
+        print(f"wrote still {args.still} (t={args.t})")
+        return 0
+
+    # One shared 32-step palette blending bg->fg; index 0 is transparent (no coverage).
+    levels = 31
+    palette = [0, 0, 0]
+    for i in range(1, levels + 1):
+        v = i / levels
+        palette += [round(bg[c] + (fg[c] - bg[c]) * v) for c in range(3)]
+    palette += [0, 0, 0] * (256 - len(palette) // 3)
+
+    frames = []
+    for f in range(args.frames):
+        mask = coverage_frame(args.size, f / args.frames, particles)
+        data = bytes(0 if v < 6 else max(1, round(v / 255 * levels)) for v in mask.tobytes())
+        frame = Image.frombytes("P", (args.size, args.size), data)
+        frame.putpalette(palette)
+        frames.append(frame)
+
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    frames[0].save(args.out, save_all=True, append_images=frames[1:], duration=args.ms,
+                   loop=0, disposal=2, transparency=0, optimize=False)
+    print(f"wrote {args.out}: {args.frames} frames, {args.size}px, {args.ms}ms, "
+          f"{args.particles} particles, color {args.color or default_color()}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""wallpaper-theme-icons: recolor Breeze's accent in the icon theme to the wallpaper's color.
+
+Breeze icons are drawn with one accent color (`.ColorScheme-Accent { color: #3daee9; }`).
+KDE apps override it at runtime; plain Qt apps like PCManFM-Qt just show the default blue.
+This builds a small overlay theme, ~/.local/share/icons/wallpaper-icons, that inherits
+breeze-dark and contains only copies of the icons that use that accent, with the blue
+replaced by the wallpaper's `primary`. Everything else falls through to Breeze unchanged.
+
+It also selects the theme for Qt apps (once) via qt6ct/qt5ct's `icon_theme` -- that platform-theme
+setting is what actually decides the icons; PCManFM-Qt's own IconThemeName key is not consulted
+on this setup. Running apps must be restarted to pick the icons up (they are loaded at startup).
+
+Usage: wallpaper-theme-icons <matugen-colors.json>
+"""
+import json
+import os
+import re
+import shutil
+import sys
+
+HOME = os.path.expanduser("~")
+SRC = "/usr/share/icons/breeze-dark"
+OUT = os.path.join(HOME, ".local/share/icons/wallpaper-icons")
+MARKER = ".generated-by-wallpaper-theme"
+THEME_NAME = "wallpaper-icons"
+QT_CONFIGS = [os.path.join(HOME, ".config/qt6ct/qt6ct.conf"), os.path.join(HOME, ".config/qt5ct/qt5ct.conf")]
+
+ACCENT = re.compile(r"#3daee9", re.IGNORECASE)   # Breeze's stock accent blue
+
+
+def parse_index_sections(path):
+    """Return {section_name: raw_text} from an index.theme (order preserved)."""
+    sections, name, buf = {}, None, []
+    for line in open(path, encoding="utf-8"):
+        m = re.match(r"\[(.+)\]\s*$", line)
+        if m:
+            if name is not None:
+                sections[name] = "".join(buf)
+            name, buf = m.group(1), [line]
+        elif name is not None:
+            buf.append(line)
+    if name is not None:
+        sections[name] = "".join(buf)
+    return sections
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print(__doc__, file=sys.stderr)
+        return 2
+    primary = json.load(open(sys.argv[1], encoding="utf-8"))["colors"]["primary"]["default"]["color"]
+
+    # Only ever replace a directory we generated ourselves.
+    if os.path.exists(OUT) and not os.path.exists(os.path.join(OUT, MARKER)):
+        print(f"refusing to overwrite {OUT}: no {MARKER} marker", file=sys.stderr)
+        return 1
+    new = OUT + ".new"
+    shutil.rmtree(new, ignore_errors=True)
+
+    written_dirs = set()
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(SRC, followlinks=True):
+        rel_dir = os.path.relpath(dirpath, SRC)
+        if rel_dir.count(os.sep) >= 3:                      # guard against link cycles
+            dirnames[:] = []
+            continue
+        for name in filenames:
+            if not name.endswith(".svg"):
+                continue
+            src = os.path.join(dirpath, name)
+            try:
+                text = open(src, encoding="utf-8").read()   # follows symlinks: materialize them
+            except (OSError, UnicodeDecodeError):
+                continue
+            if not ACCENT.search(text):
+                continue
+            dest_dir = os.path.join(new, rel_dir)
+            os.makedirs(dest_dir, exist_ok=True)
+            with open(os.path.join(dest_dir, name), "w", encoding="utf-8") as fh:
+                fh.write(ACCENT.sub(primary, text))
+            written_dirs.add(rel_dir)
+            total += 1
+
+    # index.theme: same directory definitions as Breeze for the dirs we actually populated.
+    sections = parse_index_sections(os.path.join(SRC, "index.theme"))
+    dirs = sorted(d for d in written_dirs if d in sections)
+    header = (
+        "[Icon Theme]\n"
+        "Name=Wallpaper Icons\n"
+        "Comment=breeze-dark with the accent recolored from the wallpaper (generated)\n"
+        "Inherits=breeze-dark\n"
+        f"Directories={','.join(dirs)}\n\n"
+    )
+    with open(os.path.join(new, "index.theme"), "w", encoding="utf-8") as fh:
+        fh.write(header + "\n".join(sections[d].rstrip("\n") + "\n" for d in dirs))
+    open(os.path.join(new, MARKER), "w").close()
+
+    if os.path.exists(OUT):
+        shutil.rmtree(OUT)
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    os.rename(new, OUT)
+
+    # Select the overlay theme for Qt apps (once): qt6ct/qt5ct `[Appearance] icon_theme`.
+    for path in QT_CONFIGS:
+        if not os.path.exists(path):
+            continue
+        text = open(path, encoding="utf-8").read()
+        if re.search(rf"^icon_theme={THEME_NAME}\s*$", text, flags=re.M):
+            continue
+        if re.search(r"^icon_theme=", text, flags=re.M):
+            text = re.sub(r"^icon_theme=.*$", f"icon_theme={THEME_NAME}", text, count=1, flags=re.M)
+        elif "[Appearance]" in text:
+            text = text.replace("[Appearance]\n", f"[Appearance]\nicon_theme={THEME_NAME}\n", 1)
+        else:
+            text = f"[Appearance]\nicon_theme={THEME_NAME}\n\n" + text
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    print(f"wallpaper-theme-icons: {total} icons recolored to {primary} in {len(dirs)} dirs")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

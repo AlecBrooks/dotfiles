@@ -19,10 +19,11 @@ hdmi_id="$(
     jq -r '.[] | select(.name == "HDMI-A-1") | .id'
 )"
 
+# second monitor (HDMI-A-1) = even workspaces, main monitor (DP-3) = odd ones
 if [[ "$monitor_id" == "$hdmi_id" ]]; then
-    target="$left"
-else
     target="$right"
+else
+    target="$left"
 fi
 
 hyprctl dispatch \

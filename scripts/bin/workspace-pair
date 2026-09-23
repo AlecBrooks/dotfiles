@@ -17,10 +17,11 @@ original_monitor="$(
     jq -r '.[] | select(.focused == true) | .name'
 )"
 
+# main monitor (DP-3) gets the odd workspace, the second monitor (HDMI-A-1) the even one
 hyprctl dispatch "hl.dsp.focus({ monitor = \"HDMI-A-1\" })"
-hyprctl dispatch "hl.dsp.focus({ workspace = \"$left\" })"
+hyprctl dispatch "hl.dsp.focus({ workspace = \"$right\" })"
 
 hyprctl dispatch "hl.dsp.focus({ monitor = \"DP-3\" })"
-hyprctl dispatch "hl.dsp.focus({ workspace = \"$right\" })"
+hyprctl dispatch "hl.dsp.focus({ workspace = \"$left\" })"
 
 hyprctl dispatch "hl.dsp.focus({ monitor = \"$original_monitor\" })"

@@ -9,7 +9,7 @@
     // Choose the order of the modules
     "modules-left": [
         "hyprland/workspaces",
-        "cava"
+        "group/media-drawer"
     ],
 
     "modules-center": [
@@ -17,11 +17,11 @@
     ],
 
     "modules-right": [
-        "idle_inhibitor",
+        "custom/weather",
         "pulseaudio",
         "temperature",
         "clock",
-        "tray",
+        "group/tray-drawer",
         "custom/power"
     ],
     // Modules configuration
@@ -42,6 +42,57 @@
     //     }
     // },
 
+    // Workspace numbers mean nothing here (each monitor owns its own set), so show plain dots: solid = showing on its monitor, hollow = not
+    "hyprland/workspaces": {
+        "format": "{icon}",
+        "sort-by": "number",
+        "format-icons": {
+            "default": "○",
+            "active": "●",
+            "visible": "●"
+        }
+    },
+
+    // Click the visualizer to slide out media controls: previous (or restart if the player can't skip), play/pause + what's playing, next (or +10s if it can't skip)
+    "group/media-drawer": {
+        "orientation": "inherit",
+        "drawer": {
+            "transition-duration": 250,
+            "transition-left-to-right": true,
+            "click-to-reveal": true,
+            "children-class": "media-drawer-item"
+        },
+        "modules": [
+            "cava",
+            "custom/media-prev",
+            "mpris",
+            "custom/media-next"
+        ]
+    },
+    "custom/media-prev": {
+        "format": "⏮",
+        "tooltip": false,
+        "on-click": "playerctl previous 2>/dev/null || playerctl position 0"
+    },
+    "custom/media-next": {
+        "format": "⏭",
+        "tooltip": false,
+        "on-click": "playerctl next 2>/dev/null || playerctl position 10+"
+    },
+    "mpris": {
+        "format": "{status_icon} {title} — {artist}",
+        "format-paused": "{status_icon} {title} — {artist}",
+        "format-stopped": "",
+        "status-icons": {
+            "playing": "⏸",
+            "paused": "▶"
+        },
+        "max-length": 50,
+        "tooltip-format": "{player}\n{title}\n{artist}{album}",
+        "on-click": "playerctl play-pause",
+        "on-click-right": "playerctl stop"
+    },
+
     "cava": {
         "cava_config": "$HOME/.config/waybar/cava.conf",
         "hide_on_silence": false,
@@ -54,10 +105,7 @@
             "▆",
             "▇",
             "█"
-        ],
-        "actions": {
-            "on-click-right": "mode"
-        }
+        ]
     },
 
     "keyboard-state": {
@@ -105,12 +153,40 @@
         "tooltip-format": "MPD (connected)",
         "tooltip-format-disconnected": "MPD (disconnected)"
     },
+    // Current temperature (KWeather's saved location, via Open-Meteo); click opens/focuses KWeather
+    "custom/weather": {
+        "exec": "/home/mythra/bin/waybar-weather",
+        "return-type": "json",
+        "interval": 900,
+        "on-click": "/home/mythra/bin/focus-or-launch kweather kweather"
+    },
     "idle_inhibitor": {
         "format": "{icon}",
         "format-icons": {
             "activated": "",
             "deactivated": ""
         }
+    },
+    // Tray hidden behind the swirl: click it to slide the tray icons out, click again to hide them
+    "group/tray-drawer": {
+        "orientation": "inherit",
+        "drawer": {
+            "transition-duration": 250,
+            "transition-left-to-right": false,
+            "click-to-reveal": true,
+            "children-class": "tray-drawer-item"
+        },
+        "modules": [
+            "image#tray-toggle",
+            "tray"
+        ]
+    },
+    // The Air Nomad swirl (regenerated in the theme color by ~/bin/airbender-logo --icon)
+    "image#tray-toggle": {
+        "path": "/home/mythra/.cache/wallpaper-theme/tray-icon.png",
+        "size": 20,
+        "interval": 60,
+        "tooltip": false
     },
     "tray": {
         "icon-size": 21,

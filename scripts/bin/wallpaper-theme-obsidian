@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""wallpaper-theme-obsidian: put the generated Obsidian CSS into the vault as a snippet.
+
+Copies ~/.cache/wallpaper-theme/obsidian.css to <vault>/.obsidian/snippets/wallpaper-theme.css
+(only when the content changed, via an atomic rename so Obsidian hot-reloads it) and makes sure the
+snippet is enabled, LAST in `enabledCssSnippets` so it wins over the theme and his other snippets.
+
+Only files are touched; no git commands are ever run in the vault (the vault's own rule).
+Usage: wallpaper-theme-obsidian [CSS_FILE]     vault: $OBSIDIAN_VAULT or ~/GitHub/Obsidian
+"""
+import json
+import os
+import re
+import sys
+
+NAME = "wallpaper-theme"
+src = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/.cache/wallpaper-theme/obsidian.css")
+vault = os.path.expanduser(os.environ.get("OBSIDIAN_VAULT", "~/GitHub/Obsidian"))
+cfg = os.path.join(vault, ".obsidian")
+
+if not os.path.isdir(cfg):
+    sys.exit(0)                                   # no vault on this machine: nothing to do
+new = open(src, encoding="utf-8").read()
+
+snip_dir = os.path.join(cfg, "snippets")
+os.makedirs(snip_dir, exist_ok=True)
+dst = os.path.join(snip_dir, NAME + ".css")
+try:
+    old = open(dst, encoding="utf-8").read()
+except OSError:
+    old = None
+changed = old != new
+if changed:
+    tmp = dst + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(new)
+    os.replace(tmp, dst)
+
+# Enable it (once). Edit the text surgically so the rest of appearance.json stays byte-identical.
+app = os.path.join(cfg, "appearance.json")
+text = open(app, encoding="utf-8").read()
+enabled = json.loads(text).get("enabledCssSnippets", [])
+enabled_now = False
+if NAME not in enabled:
+    m = re.search(r'("enabledCssSnippets"\s*:\s*\[)(.*?)(\s*\])', text, flags=re.S)
+    if not m:
+        sys.exit("appearance.json has no enabledCssSnippets list")
+    body = m.group(2)
+    indent = re.search(r'\n(\s*)"', body)
+    ind = indent.group(1) if indent else "    "
+    body = body.rstrip() + ("," if body.strip() else "") + f'\n{ind}"{NAME}"'
+    text = text[:m.start(2)] + body + text[m.end(2):]
+    json.loads(text)                              # must still be valid
+    tmp = app + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp, app)
+    enabled_now = True
+
+print(f"obsidian snippet: {'updated' if changed else 'unchanged'}, {'enabled now' if enabled_now else 'already enabled'}")

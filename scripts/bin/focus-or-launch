@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""focus-or-launch: jump to an app's window if it is already open, otherwise start it.
+
+Handy for one-key app binds. Many apps (Sublime, KDE apps) do nothing when started a second
+time while running, so a plain launch bind is dead once the app is open.
+
+Usage: focus-or-launch <window-class-regex> <command> [args...]
+   e.g. focus-or-launch sublime_text subl
+        focus-or-launch kweather kweather
+
+The class regex is matched (case-insensitively) against the window classes shown by
+`hyprctl clients`. Focus uses Hyprland's Lua dispatcher `hl.dsp.focus({ window = "class:..." })`
+(the `address:` selector is accepted but silently does nothing on this build).
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+
+
+def main() -> int:
+    if len(sys.argv) < 3:
+        print(__doc__, file=sys.stderr)
+        return 2
+    pattern = re.compile(sys.argv[1], re.IGNORECASE)
+    command = sys.argv[2:]
+
+    try:
+        out = subprocess.run(["hyprctl", "-j", "clients"], capture_output=True, text=True, timeout=5)
+        clients = json.loads(out.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        clients = []
+
+    matches = [c for c in clients if pattern.search(c.get("class", "")) and c.get("mapped", True)]
+    if matches:
+        best = min(matches, key=lambda c: c.get("focusHistoryID", 1 << 30))   # most recently used
+        subprocess.run(
+            ["hyprctl", "dispatch", f'hl.dsp.focus({{ window = "class:{best["class"]}" }})'],
+            capture_output=True,
+            timeout=5,
+        )
+        return 0
+
+    os.execvp(command[0], command)   # not running: become the app
+
+
+if __name__ == "__main__":
+    sys.exit(main())

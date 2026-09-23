@@ -19,6 +19,7 @@ STOW_PACKAGES=(
   ytjukebox
   scripts
   nvim
+  fastfetch
 )
 
 MANAGED_PATHS=(
@@ -35,6 +36,7 @@ MANAGED_PATHS=(
   ".config/gtk-3.0"
   ".config/gtk-4.0"
   ".config/ytjukebox"
+  ".config/fastfetch"
   "bin"
 )
 

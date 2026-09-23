@@ -1,0 +1,58 @@
+# matugen config for the wallpaper-driven desktop theme.
+# Run via ~/bin/wallpaper-theme (it picks the DP-3 wallpaper and does the reloads).
+# Generated files land in ~/.cache/wallpaper-theme/ (NOT tracked in git); the real
+# configs pull them in with include/source/@import.
+
+[config]
+
+# ANSI hues for terminals etc. Each starts from the gruvbox color and is blended
+# toward the wallpaper's hue, so red still reads as red but sits in the palette.
+[config.custom_colors]
+red     = { color = "#cc241d", blend = true }
+green   = { color = "#98971a", blend = true }
+yellow  = { color = "#d79921", blend = true }
+blue    = { color = "#458588", blend = true }
+magenta = { color = "#b16286", blend = true }
+cyan    = { color = "#689d6a", blend = true }
+orange  = { color = "#d65d0e", blend = true }
+
+[templates.kitty]
+input_path  = '~/.config/matugen/templates/kitty-colors.conf'
+output_path = '~/.cache/wallpaper-theme/kitty-colors.conf'
+
+[templates.hyprland]
+input_path  = '~/.config/matugen/templates/hypr-colors.lua'
+output_path = '~/.cache/wallpaper-theme/hypr-colors.lua'
+
+[templates.hyprlock]
+input_path  = '~/.config/matugen/templates/hyprlock-colors.conf'
+output_path = '~/.cache/wallpaper-theme/hyprlock-colors.conf'
+
+[templates.waybar]
+input_path  = '~/.config/matugen/templates/waybar-colors.css'
+output_path = '~/.cache/wallpaper-theme/waybar-colors.css'
+
+[templates.sublime]
+input_path  = '~/.config/matugen/templates/sublime.sublime-color-scheme'
+output_path = '~/.config/sublime-text/Packages/User/Wallpaper.sublime-color-scheme'
+
+[templates.hyprtoolkit]
+input_path  = '~/.config/matugen/templates/hyprtoolkit.conf'
+output_path = '~/.config/hypr/hyprtoolkit.conf'
+
+[templates.fastfetch]
+input_path  = '~/.config/matugen/templates/fastfetch.jsonc'
+output_path = '~/.config/fastfetch/config.jsonc'
+
+[templates.obsidian]
+input_path  = '~/.config/matugen/templates/obsidian.css'
+output_path = '~/.cache/wallpaper-theme/obsidian.css'
+
+# Qt palette for qt6ct/qt5ct (used by Kirigami/QML apps like KWeather and KCalc's non-Kvantum parts)
+[templates.qt6ct]
+input_path  = '~/.config/matugen/templates/qt-colors.conf'
+output_path = '~/.config/qt6ct/colors/wallpaper.conf'
+
+[templates.qt5ct]
+input_path  = '~/.config/matugen/templates/qt-colors.conf'
+output_path = '~/.config/qt5ct/colors/wallpaper.conf'

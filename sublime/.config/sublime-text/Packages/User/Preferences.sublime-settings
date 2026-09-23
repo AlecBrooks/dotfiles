@@ -7,7 +7,8 @@
     [
 		"Vintage",
     ],
-    "theme": "gruvbox.sublime-theme",
+    "theme": "Adaptive.sublime-theme",
+    "color_scheme": "Packages/User/Wallpaper.sublime-color-scheme",
     "index_files": true,
     "font_size": 11,
 }
