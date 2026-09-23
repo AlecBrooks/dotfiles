@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# wallpaper-theme: generate the desktop color scheme from the wallpaper on DP-3.
+#
+# Reads which Wallpaper Engine wallpaper is assigned to the monitor (wallpaper-picker's
+# config.json), builds a full color palette from its preview image in the chosen STYLE
+# (wallpaper-theme-palette), renders every template from it (matugen), and (unless
+# --no-reload) reloads the apps that can hot-reload. Generated files go to
+# ~/.cache/wallpaper-theme/ and are pulled in by the real configs; templates live in
+# ~/.config/matugen/templates/.
+#
+# Styles: soft (default) | balanced | vivid | muted -- see wallpaper-theme-palette. The style is
+# taken from --style, else $WALLPAPER_THEME_STYLE, else the word in ~/.config/wallpaper-theme/style.
+#
+# Usage: wallpaper-theme [--style soft|balanced|vivid|muted] [--monitor DP-3]
+#                        [--image PATH] [--no-reload] [--no-restart-apps] [--dry-run]
+set -euo pipefail
+
+# Resolve our own directory so helpers are found even when ~/bin isn't on PATH
+# (the systemd user manager and desktop launchers don't have it).
+HERE="$(dirname "$(readlink -f "$0")")"
+
+MONITOR="${WALLPAPER_THEME_MONITOR:-DP-3}"
+STYLE_FILE="$HOME/.config/wallpaper-theme/style"
+STYLE="${WALLPAPER_THEME_STYLE:-}"
+[[ -z "$STYLE" && -r "$STYLE_FILE" ]] && STYLE="$(tr -d '[:space:]' <"$STYLE_FILE")"
+STYLE="${STYLE:-soft}"
+MODE="${WALLPAPER_THEME_MODE:-dark}"
+IMAGE=""
+RELOAD=1
+RESTART_APPS="${WALLPAPER_THEME_RESTART_APPS:-1}"
+DRY=()
+
+PICKER_CONFIG="$HOME/.config/wallpaper-picker/config.json"
+WORKSHOP="$HOME/.local/share/Steam/steamapps/workshop/content/431960"
+OUT_DIR="$HOME/.cache/wallpaper-theme"
+LOG="$HOME/.local/state/wallpaper-theme.log"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --style)     STYLE="$2"; shift 2 ;;
+        --monitor)   MONITOR="$2"; shift 2 ;;
+        --image)     IMAGE="$2"; shift 2 ;;
+        --no-reload) RELOAD=0; shift ;;
+        --no-restart-apps) RESTART_APPS=0; shift ;;
+        --dry-run)   DRY=(--dry-run); RELOAD=0; shift ;;
+        -h|--help)   sed -n '2,12p' "$0"; exit 0 ;;
+        *) echo "wallpaper-theme: unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+
+mkdir -p "$OUT_DIR" "$(dirname "$LOG")"
+log() { printf '[%s] %s\n' "$(date -Is)" "$*" >>"$LOG"; }
+
+# One run at a time (the picker and login hook can both call this).
+exec 9>"$OUT_DIR/.lock"
+flock -w 20 9 || { echo "wallpaper-theme: another run is still going" >&2; exit 1; }
+
+# Resolve the image: the preview of whatever wallpaper is assigned to $MONITOR.
+if [[ -z "$IMAGE" ]]; then
+    IMAGE="$(python3 - "$PICKER_CONFIG" "$WORKSHOP" "$MONITOR" <<'PYEOF'
+import json, os, sys
+cfg, workshop, monitor = sys.argv[1:4]
+try:
+    wid = json.load(open(cfg))["assignments"][monitor]
+except (OSError, KeyError, ValueError) as exc:
+    sys.exit(f"no wallpaper assigned to {monitor} in {cfg} ({exc})")
+proj = os.path.join(workshop, str(wid))
+try:
+    preview = json.load(open(os.path.join(proj, "project.json"))).get("preview", "preview.jpg")
+except (OSError, ValueError):
+    preview = "preview.jpg"
+path = os.path.join(proj, preview)
+if not os.path.isfile(path):
+    sys.exit(f"preview image not found: {path}")
+print(path)
+PYEOF
+    )" || { log "FAILED to resolve image for $MONITOR"; echo "wallpaper-theme: could not resolve the wallpaper for $MONITOR" >&2; exit 1; }
+fi
+
+log "source=$IMAGE monitor=$MONITOR style=$STYLE mode=$MODE dry=${#DRY[@]}"
+# Build the tuned palette JSON once; every template and script below reads it.
+PALETTE="$OUT_DIR/.colors.json"
+[[ ${#DRY[@]} -gt 0 ]] && PALETTE="$OUT_DIR/.colors.dry.json"
+"$HERE/wallpaper-theme-palette" --image "$IMAGE" --style "$STYLE" --surfaces "${WALLPAPER_THEME_SURFACES:-neutral}" --mode "$MODE" --out "$PALETTE" 2>>"$LOG" \
+    || { log "palette FAILED"; echo "wallpaper-theme: could not build the palette (see $LOG)" >&2; exit 1; }
+if [[ ${#DRY[@]} -eq 0 ]]; then
+    matugen json "$PALETTE" -c "$HOME/.config/matugen/config.toml" -m "$MODE" -q \
+        || { log "matugen FAILED"; echo "wallpaper-theme: matugen failed (see $LOG)" >&2; exit 1; }
+fi
+
+printf '%s\n' "$IMAGE" >"$OUT_DIR/.source"
+
+# starship has no include support, so build a full config: the tracked starship.toml with
+# its palette swapped for one derived from the wallpaper (a lightness gradient of `primary`,
+# matching the powerline segments' light->dark order). Bash sets STARSHIP_CONFIG to it.
+if [[ ${#DRY[@]} -eq 0 ]]; then
+    python3 - "$OUT_DIR/.colors.json" "$HOME/.config/starship.toml" "$OUT_DIR/starship.toml" <<'PYEOF' \
+        || log "starship palette step FAILED (non-fatal)"
+import colorsys, json, re, sys
+jpath, src, dst = sys.argv[1:4]
+c = json.load(open(jpath, encoding="utf-8"))["colors"]
+col = lambda name: c[name]["default"]["color"]
+rgb = lambda h: tuple(int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+hexof = lambda r: "#%02x%02x%02x" % tuple(round(x * 255) for x in r)
+h, l, s = colorsys.rgb_to_hls(*rgb(col("primary")))
+at = lambda light, sat=1.0: hexof(colorsys.hls_to_rgb(h, light, min(1.0, s * sat)))
+palette = {
+    "color_fg0": col("on_surface"),
+    "color_bg1": at(0.20, 0.7),
+    "color_bg3": at(0.28, 0.8),
+    "color_blue": at(0.43, 0.9),
+    "color_aqua": at(0.53),
+    "color_green": col("green"),
+    "color_orange": col("primary"),
+    "color_purple": col("magenta"),
+    "color_red": col("red"),
+    "color_yellow": at(0.63),
+    "color_yellow_bright": col("yellow"),
+}
+text = open(src, encoding="utf-8").read()
+text, n = re.subn(r"^palette\s*=\s*'[^']*'", "palette = 'wallpaper'", text, count=1, flags=re.M)
+if n != 1:
+    sys.exit("starship.toml has no `palette = '...'` line to swap")
+text = text.rstrip("\n") + "\n\n# Generated by wallpaper-theme (matugen); not tracked in git.\n[palettes.wallpaper]\n"
+text += "".join(f"{k} = '{v}'\n" for k, v in palette.items())
+open(dst, "w", encoding="utf-8").write(text)
+PYEOF
+fi
+
+# Obsidian: the same palette as a vault CSS snippet (hot-reloads in a running Obsidian).
+if [[ ${#DRY[@]} -eq 0 && -s "$OUT_DIR/obsidian.css" ]]; then
+    "$HERE/wallpaper-theme-obsidian" "$OUT_DIR/obsidian.css" >>"$LOG" 2>&1 \
+        || log "obsidian snippet step FAILED (non-fatal)"
+fi
+
+# Spinning Air Nomad logo for fastfetch, drawn in the wallpaper's accent (kitty plays the GIF).
+if [[ ${#DRY[@]} -eq 0 ]]; then
+    PRIMARY="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['colors']['primary']['default']['color'])" "$OUT_DIR/.colors.json")"
+    "$HERE/airbender-logo" --color "$PRIMARY" >>"$LOG" 2>&1 \
+        || log "airbender logo step FAILED (non-fatal)"
+    # The same swirl as a small transparent icon: the Waybar tray-drawer button.
+    "$HERE/airbender-logo" --color "$PRIMARY" --icon "$OUT_DIR/tray-icon.png" >>"$LOG" 2>&1 \
+        || log "tray icon step FAILED (non-fatal)"
+fi
+
+# Qt apps (PCManFM-Qt, etc.) are styled by Kvantum: regenerate its "Wallpaper" theme from the
+# pristine base in ~/.config/matugen/kvantum-base/. Running Qt apps need a restart to pick it up.
+if [[ ${#DRY[@]} -eq 0 && -s "$OUT_DIR/.colors.json" ]]; then
+    "$HERE/wallpaper-theme-kvantum" "$OUT_DIR/.colors.json" || log "kvantum step FAILED (non-fatal)"
+    # Recolor Breeze's accent blue in the icon theme (folders etc.) to the wallpaper's primary.
+    "$HERE/wallpaper-theme-icons" "$OUT_DIR/.colors.json" >>"$LOG" 2>&1 || log "icons step FAILED (non-fatal)"
+
+    # KDE/Kirigami apps (KWeather, KCalc) take their colors from kdeglobals' [Colors:*] groups.
+    "$HERE/wallpaper-theme-kdeglobals" "$OUT_DIR/.colors.json" >>"$LOG" 2>&1 || log "kdeglobals step FAILED (non-fatal)"
+
+    # GTK apps (pavucontrol, dialogs, ...): rebuild the "Wallpaper" GTK theme from Gruvbox-Teal-Dark.
+    "$HERE/wallpaper-theme-gtk" "$OUT_DIR/.colors.json" >>"$LOG" 2>&1 || log "gtk theme step FAILED (non-fatal)"
+
+    # Point qt6ct/qt5ct at the generated palette (once; matugen rewrites the file every run). Their
+    # `color_scheme_path` used to be the stock Breeze Dark palette (white text, blue accent).
+    python3 - "$HOME/.config/qt6ct/qt6ct.conf:$HOME/.config/qt6ct/colors/wallpaper.conf" \
+                "$HOME/.config/qt5ct/qt5ct.conf:$HOME/.config/qt5ct/colors/wallpaper.conf" <<'PYEOF' \
+        || log "qt palette step FAILED (non-fatal)"
+import os, re, sys
+for arg in sys.argv[1:]:
+    conf, scheme = arg.split(":", 1)
+    if not (os.path.exists(conf) and os.path.exists(scheme)):
+        continue
+    text = open(conf, encoding="utf-8").read()
+    if re.search(rf"^color_scheme_path={re.escape(scheme)}\s*$", text, flags=re.M) and re.search(r"^custom_palette=true\s*$", text, flags=re.M):
+        continue
+    for key, val in (("color_scheme_path", scheme), ("custom_palette", "true")):
+        if re.search(rf"^{key}=", text, flags=re.M):
+            text = re.sub(rf"^{key}=.*$", f"{key}={val}", text, count=1, flags=re.M)
+        else:
+            text = text.replace("[Appearance]\n", f"[Appearance]\n{key}={val}\n", 1)
+    open(conf, "w", encoding="utf-8").write(text)
+PYEOF
+
+    # Remember WHEN the Qt-visible theme (Kvantum colors + icon color) last actually changed, so
+    # the file-manager restart happens only after a real change, not on every run.
+    new_hash="$(cat "$HOME/.config/Kvantum/Wallpaper/Wallpaper.kvconfig" \
+                    "$HOME/.local/share/icons/wallpaper-icons/places/64/folder.svg" \
+                    "$HOME/.config/qt6ct/colors/wallpaper.conf" "$HOME/.config/kdeglobals" \
+                    "$HOME/.local/share/themes/Wallpaper/gtk-3.0/gtk.css" 2>/dev/null | sha256sum | cut -d' ' -f1)"
+    if [[ "$new_hash" != "$(cat "$OUT_DIR/.theme-hash" 2>/dev/null)" ]]; then
+        printf '%s\n' "$new_hash" >"$OUT_DIR/.theme-hash"
+        date +%s >"$OUT_DIR/.changed-at"
+    fi
+fi
+
+if [[ $RELOAD -eq 1 ]]; then
+    # kitty re-reads its config (and our include) on SIGUSR1.
+    pkill -USR1 -x kitty 2>/dev/null || true
+    # Hyprland re-reads hyprland.lua (borders). Waybar reloads its own CSS.
+    hyprctl reload >/dev/null 2>&1 || true
+    # hyprlauncher (a daemon) and hyprpolkitagent read hyprtoolkit.conf only at startup; the
+    # launcher restarts itself on the next Super+R.
+    # Waybar only auto-reloads when style.css itself changes, not the imported colors file, so it
+    # has to be restarted. NOT SIGUSR2: its in-process reload tears down every module, and the
+    # cava module's update callback then touches an already-destroyed widget -> SIGSEGV
+    # (Gtk::Widget::get_style_context in Cava::onUpdate; hit on 2026-09-23). The Apply path in the
+    # picker restarts Waybar itself right after re-theming, so it sets WALLPAPER_THEME_SKIP_WAYBAR=1.
+    if [[ "${WALLPAPER_THEME_SKIP_WAYBAR:-0}" != "1" ]] && command -v waybar >/dev/null; then
+        pkill -TERM -x waybar 2>/dev/null || true
+        for _ in $(seq 1 20); do pgrep -x waybar >/dev/null || break; sleep 0.1; done
+        setsid -f waybar >>"$HOME/.local/state/wallpaper-picker/waybar.log" 2>&1 </dev/null 9>&-
+    fi
+    pkill -x hyprlauncher 2>/dev/null || true
+    systemctl --user try-restart hyprpolkitagent.service 2>/dev/null || true
+    log "reloaded kitty + hyprland + waybar + launcher + polkit agent"
+    # Qt apps only read their theme at startup: restart the file manager (keeping its folders and
+    # workspace) if the theme changed. Detached, so an Apply/button click isn't kept waiting.
+    if [[ "$RESTART_APPS" == "1" ]]; then
+        setsid -f "$HERE/wallpaper-theme-restart-fm" >>"$LOG" 2>&1 </dev/null 9>&-
+    fi
+fi

@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""wallpaper-theme-kvantum: build the "Wallpaper" Kvantum theme from the wallpaper's colors.
+
+Takes the pristine base theme in ~/.config/matugen/kvantum-base/ (your tuned Gruvbox-derived
+Kvantum theme) and remaps every color by role, so all shapes/opacities are preserved:
+
+  * accent blues (hue 185-215, clearly colored)  -> the wallpaper's primary hue/lightness
+  * neutrals and cream text (low chroma)          -> the wallpaper's surface->text lightness ramp
+  * one-off saturated colors (reds, pinks, ...)    -> left untouched
+
+Output: ~/.config/Kvantum/Wallpaper/Wallpaper.{kvconfig,svg}. Selecting it is one line in
+~/.config/Kvantum/kvantum.kvconfig (this script sets it once). Running Qt apps must be
+restarted to pick up a changed theme.
+
+Usage: wallpaper-theme-kvantum <matugen-colors.json>
+"""
+import colorsys
+import json
+import os
+import re
+import sys
+
+HOME = os.path.expanduser("~")
+BASE = os.path.join(HOME, ".config/matugen/kvantum-base")
+OUT = os.path.join(HOME, ".config/Kvantum/Wallpaper")
+KV_SELECT = os.path.join(HOME, ".config/Kvantum/kvantum.kvconfig")
+THEME = "Wallpaper"
+
+# Reference points measured from the base theme.
+BASE_ACCENT_L = 0.59      # the base accent (#6ba8c0)
+BASE_ACCENT_S = 0.40
+BASE_BG_L = 0.157         # window background (#282828) -> maps to the wallpaper surface
+BASE_TEXT_L = 0.82        # cream text (#ebdbb2) -> maps to on_surface (matches the terminal foreground)
+
+
+def clamp(x, lo=0.0, hi=1.0):
+    return max(lo, min(hi, x))
+
+
+def parse(hexstr):
+    return tuple(int(hexstr[i:i + 2], 16) / 255 for i in (1, 3, 5))
+
+
+def to_hex(rgb):
+    return "#%02x%02x%02x" % tuple(round(clamp(c) * 255) for c in rgb)
+
+
+def hls(hexstr):
+    return colorsys.rgb_to_hls(*parse(hexstr))
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print(__doc__, file=sys.stderr)
+        return 2
+    colors = json.load(open(sys.argv[1], encoding="utf-8"))["colors"]
+    col = lambda name: colors[name]["default"]["color"]
+
+    ph, pl, ps = hls(col("primary"))            # accent target
+    sh, sl, ss = hls(col("surface"))            # darkest neutral target
+    _, ol, os_ = hls(col("on_surface"))         # lightest neutral target
+
+    def remap(hexstr: str) -> str:
+        r, g, b = parse(hexstr)
+        h, l, s = colorsys.rgb_to_hls(r, g, b)
+        chroma = max(r, g, b) - min(r, g, b)
+        hue = h * 360
+
+        if 185 <= hue <= 215 and chroma >= 0.18:                 # accent family
+            nl = clamp(l + (pl - BASE_ACCENT_L), 0.04, 0.97)
+            ns = clamp(s * (ps / BASE_ACCENT_S), 0.0, 0.9)
+            return to_hex(colorsys.hls_to_rgb(ph, nl, ns))
+        if chroma < 0.25:                                        # neutrals / cream text
+            t = (l - BASE_BG_L) / (BASE_TEXT_L - BASE_BG_L)
+            nl = clamp(sl + t * (ol - sl), 0.0, min(1.0, ol + 0.06))
+            ns = (ss + clamp(t) * (os_ - ss))
+            return to_hex(colorsys.hls_to_rgb(sh, nl, ns))
+        return hexstr                                            # leave one-offs alone
+
+    hex_re = re.compile(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\b")
+    os.makedirs(OUT, exist_ok=True)
+    for ext in ("kvconfig", "svg"):
+        text = open(os.path.join(BASE, f"Gruvbox.{ext}"), encoding="utf-8").read()
+        text = hex_re.sub(lambda m: remap(m.group(0)[:7].lower()) + m.group(0)[7:], text)
+        if ext == "kvconfig":
+            # Kvantum hard-codes a neutral #222222 for PCManFM-Qt's side pane; let it show the
+            # theme's own window color instead so it follows the wallpaper.
+            text = re.sub(r"^transparent_pcmanfm_sidepane=.*$", "transparent_pcmanfm_sidepane=true", text, flags=re.M)
+        with open(os.path.join(OUT, f"{THEME}.{ext}"), "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+    # Select the theme once (Kvantum reads this on app start).
+    current = open(KV_SELECT, encoding="utf-8").read() if os.path.exists(KV_SELECT) else ""
+    if not re.search(rf"^theme={THEME}\s*$", current, flags=re.M):
+        if re.search(r"^theme=", current, flags=re.M):
+            current = re.sub(r"^theme=.*$", f"theme={THEME}", current, count=1, flags=re.M)
+        else:
+            current = "[General]\n" + f"theme={THEME}\n"
+        with open(KV_SELECT, "w", encoding="utf-8") as fh:
+            fh.write(current)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

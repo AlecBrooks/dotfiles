@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""waybar-weather: current temperature for a Waybar custom module (JSON on stdout).
+
+Uses the first location saved in KWeather (~/.config/kweather/kweatherrc: name, lat/lon and the
+temperature unit), so it follows whatever KWeather is set to. Data: Open-Meteo (no key).
+The last good reading is cached; if the network is down the cached value is shown as stale.
+
+Waybar: "custom/weather": { "exec": "~/bin/waybar-weather", "return-type": "json", "interval": 900 }
+"""
+import configparser
+import json
+import os
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+RC = os.path.expanduser("~/.config/kweather/kweatherrc")
+CACHE = os.path.expanduser("~/.cache/waybar-weather.json")
+
+# WMO weather codes -> short text
+WMO = {
+    0: "Clear", 1: "Mostly clear", 2: "Partly cloudy", 3: "Overcast", 45: "Fog", 48: "Rime fog",
+    51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle", 56: "Freezing drizzle", 57: "Freezing drizzle",
+    61: "Light rain", 63: "Rain", 65: "Heavy rain", 66: "Freezing rain", 67: "Freezing rain",
+    71: "Light snow", 73: "Snow", 75: "Heavy snow", 77: "Snow grains",
+    80: "Rain showers", 81: "Rain showers", 82: "Violent showers", 85: "Snow showers", 86: "Snow showers",
+    95: "Thunderstorm", 96: "Thunderstorm, hail", 99: "Thunderstorm, hail",
+}
+
+
+def location():
+    cp = configparser.ConfigParser(interpolation=None, strict=False)
+    cp.optionxform = str
+    cp.read(RC)
+    unit = cp.get("General", "temperatureUnits", fallback="Fahrenheit")
+    best = None
+    for sec in cp.sections():
+        if sec.startswith("WeatherLocations"):
+            idx = cp.getint(sec, "index", fallback=999)
+            if best is None or idx < best[0]:
+                best = (idx, sec)
+    if best is None:
+        return None
+    sec = best[1]
+    return (cp.getfloat(sec, "latitude"), cp.getfloat(sec, "longitude"),
+            cp.get(sec, "locationName", fallback=""), unit)
+
+
+def emit(text, tooltip):
+    print(json.dumps({"text": text, "tooltip": tooltip}))
+
+
+def main() -> int:
+    loc = location()
+    if loc is None:
+        emit("n/a", "No location saved in KWeather")
+        return 0
+    lat, lon, name, unit = loc
+    fahr = unit.lower().startswith("f")
+    q = urllib.parse.urlencode({
+        "latitude": lat, "longitude": lon,
+        "current": "temperature_2m,apparent_temperature,weather_code",
+        "temperature_unit": "fahrenheit" if fahr else "celsius",
+    })
+    try:
+        with urllib.request.urlopen("https://api.open-meteo.com/v1/forecast?" + q, timeout=10) as r:
+            cur = json.load(r)["current"]
+        deg = "°F" if fahr else "°C"
+        text = f"{round(cur['temperature_2m'])}{deg}"
+        tip = (f"{name}: {WMO.get(cur['weather_code'], 'Unknown')}\n"
+               f"Feels like {round(cur['apparent_temperature'])}{deg}\nClick to open KWeather")
+        os.makedirs(os.path.dirname(CACHE), exist_ok=True)
+        json.dump({"text": text, "tooltip": tip, "time": time.time()}, open(CACHE, "w"))
+        emit(text, tip)
+    except Exception as exc:                      # offline, API hiccup, bad JSON...
+        try:
+            old = json.load(open(CACHE))
+            mins = int((time.time() - old["time"]) / 60)
+            emit(old["text"], old["tooltip"] + f"\n(stale: {mins} min old)")
+        except Exception:
+            emit("n/a", f"Weather unavailable ({exc.__class__.__name__})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

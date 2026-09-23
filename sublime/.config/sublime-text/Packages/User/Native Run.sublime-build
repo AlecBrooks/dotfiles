@@ -9,8 +9,9 @@
         "*.cpp",
         "*.cc",
         "*.cxx",
-        "*.c++"
+        "*.c++",
+        "*.lua"
     ],
-    "selector": "source.python, source.r, source.c, source.c++",
+    "selector": "source.python, source.r, source.c, source.c++, source.lua",
     "quiet": true
 }

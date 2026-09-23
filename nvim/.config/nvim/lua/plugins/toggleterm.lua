@@ -10,8 +10,6 @@ return {
       size = 15,
     })
 
-    local Terminal = require("toggleterm.terminal").Terminal
-
     -- %s is substituted with the current file's absolute path
     local run_commands = {
       python = "python3 %s",
@@ -27,6 +25,13 @@ return {
       r = "Rscript %s",
     }
 
+    local run_socket = "unix:/tmp/kitty-nvim-run.sock"
+
+    local function run_window_alive()
+      vim.fn.system({ "kitty", "@", "--to", run_socket, "ls" })
+      return vim.v.shell_error == 0
+    end
+
     local function run_current_file()
       local filetype = vim.bo.filetype
       local template = run_commands[filetype]
@@ -40,10 +45,28 @@ return {
 
       local file = vim.fn.shellescape(vim.fn.expand("%:p"))
       local cmd = string.format(template, file)
-      local run_term = Terminal:new({ cmd = cmd, direction = "float", close_on_exit = false })
-      run_term:toggle()
+
+      if run_window_alive() then
+        -- interrupt whatever's running, clear the scrollback, then run the new command
+        vim.fn.system({ "kitty", "@", "--to", run_socket, "send-text", "\x03" })
+        vim.fn.system({ "kitty", "@", "--to", run_socket, "send-text", "clear\n" })
+        vim.fn.system({ "kitty", "@", "--to", run_socket, "send-text", cmd .. "\n" })
+      else
+        vim.fn.jobstart({
+          "kitty",
+          "--detach",
+          "--listen-on",
+          run_socket,
+          "-o",
+          "allow_remote_control=yes",
+          "-e",
+          "bash",
+          "-c",
+          cmd .. "; exec bash",
+        }, { detach = true })
+      end
     end
 
-    vim.keymap.set("n", "<F5>", run_current_file, { desc = "Run current file in terminal" })
+    vim.keymap.set("n", "<F5>", run_current_file, { desc = "Run current file in a detached kitty window" })
   end,
 }

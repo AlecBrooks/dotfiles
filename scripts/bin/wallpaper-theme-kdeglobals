@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""wallpaper-theme-kdeglobals: write the KDE color groups of ~/.config/kdeglobals from the palette.
+
+KDE/Kirigami apps (KWeather, KCalc, ...) read their colors from the `[Colors:*]` groups of
+kdeglobals via KColorScheme, not from qt6ct. Only those groups are replaced; every other
+section/key in the file (e.g. `[KDE] widgetStyle=qt6ct-style`) is preserved as it is.
+
+Usage: wallpaper-theme-kdeglobals [COLORS_JSON]   (default ~/.cache/wallpaper-theme/.colors.json)
+"""
+import json
+import os
+import re
+import sys
+
+src = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/.cache/wallpaper-theme/.colors.json")
+dst = os.path.expanduser("~/.config/kdeglobals")
+c = json.load(open(src, encoding="utf-8"))["colors"]
+
+
+def rgb(name):
+    h = c[name]["default"]["color"]
+    return ",".join(str(int(h[i:i + 2], 16)) for i in (1, 3, 5))
+
+
+def group(name, bg, alt, fg, inactive, active, link, visited, deco, sel_fg=None):
+    lines = [f"[Colors:{name}]"]
+    for key, val in (
+        ("BackgroundAlternate", rgb(alt)), ("BackgroundNormal", rgb(bg)),
+        ("DecorationFocus", rgb(deco)), ("DecorationHover", rgb(deco)),
+        ("ForegroundActive", rgb(active)), ("ForegroundInactive", rgb(inactive)),
+        ("ForegroundLink", rgb(link)), ("ForegroundNegative", rgb("red")),
+        ("ForegroundNeutral", rgb("orange")), ("ForegroundNormal", rgb(sel_fg or fg)),
+        ("ForegroundPositive", rgb("green")), ("ForegroundVisited", rgb(visited)),
+    ):
+        lines.append(f"{key}={val}")
+    return "\n".join(lines) + "\n"
+
+
+groups = [
+    group("Button", "surface_container_high", "surface_container_highest", "on_surface", "outline", "primary", "primary", "secondary", "primary"),
+    group("Complementary", "surface_dim", "surface_container", "on_surface", "outline", "primary", "primary", "secondary", "primary"),
+    group("Header", "surface_dim", "surface_container", "on_surface", "outline", "primary", "primary", "secondary", "primary"),
+    group("Selection", "primary", "secondary", "on_primary", "on_primary", "on_primary", "on_primary", "on_primary", "primary"),
+    group("Tooltip", "surface_container_high", "surface_container_highest", "on_surface", "outline", "primary", "primary", "secondary", "primary"),
+    group("View", "surface", "surface_container", "on_surface", "outline", "primary", "primary", "secondary", "primary"),
+    group("Window", "surface", "surface_container", "on_surface", "outline", "primary", "primary", "secondary", "primary"),
+]
+
+try:
+    old = open(dst, encoding="utf-8").read()
+except OSError:
+    old = ""
+# drop the old [Colors:*] sections, keep everything else verbatim
+kept = re.sub(r"^\[Colors:[^\]]*\]\n(?:(?!\[).*\n?)*", "", old, flags=re.M).strip("\n")
+text = ("\n".join(groups) + "\n" + kept + "\n") if kept else "\n".join(groups)
+if "[KDE]" not in text:
+    text += "\n[KDE]\nwidgetStyle=qt6ct-style\n"
+if text != old:
+    tmp = dst + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, dst)
+    print("wallpaper-theme-kdeglobals: updated")
+else:
+    print("wallpaper-theme-kdeglobals: unchanged")

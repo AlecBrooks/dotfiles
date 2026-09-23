@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""wallpaper-theme-gtk: build the "Wallpaper" GTK theme from the wallpaper's colors.
+
+Takes the pristine Gruvbox-Teal-Dark theme in /usr/share/themes and remaps every color by role,
+so all shapes, alphas and widget rules are preserved (same idea as wallpaper-theme-kvantum):
+
+  * the theme's sage accent family (#89b482 and its tints/shades) and its teal (#45707a family)
+                                                   -> the wallpaper's primary hue/lightness
+  * neutrals and the cream text (#fbf1c7, incl. rgba(251,241,199,a) tints)
+                                                   -> the wallpaper's surface->text lightness ramp
+  * everything else (reds, warnings, GNOME palette one-offs)  -> left untouched
+
+CSS colors written as #rrggbb and rgb()/rgba() are remapped; the PNG/SVG assets (checkboxes,
+radios, sliders) are recolored the same way.
+
+Output: ~/.local/share/themes/Wallpaper/{gtk-3.0,gtk-4.0}. It also (idempotently) selects the theme:
+gtk-3.0/gtk-4.0 settings.ini, gsettings gtk-theme, and a one-line gtk-4.0/gtk.css + gtk-dark.css that
+@import the generated CSS (libadwaita apps ignore the theme name and only read those).
+Running GTK apps must be restarted to pick up a changed theme.
+
+Usage: wallpaper-theme-gtk <matugen-colors.json>
+"""
+import colorsys
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+HOME = os.path.expanduser("~")
+SRC = "/usr/share/themes/Gruvbox-Teal-Dark"
+OUT = os.path.join(HOME, ".local/share/themes/Wallpaper")
+THEME = "Wallpaper"
+
+# Reference points measured from the source theme.
+BASE_ACCENT_L = 0.61      # #89b482
+BASE_ACCENT_S = 0.35      # its HLS saturation
+BASE_BG_L = 0.147         # #282524 (view background) -> wallpaper surface
+BASE_TEXT_L = 0.89        # #fbf1c7 (cream text)      -> wallpaper on_surface
+
+
+def clamp(x, lo=0.0, hi=1.0):
+    return max(lo, min(hi, x))
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print(__doc__, file=sys.stderr)
+        return 2
+    colors = json.load(open(sys.argv[1], encoding="utf-8"))["colors"]
+    col = lambda name: colors[name]["default"]["color"]
+    p = lambda h: tuple(int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+
+    ph, pl, ps = colorsys.rgb_to_hls(*p(col("primary")))
+    sh, sl, ss = colorsys.rgb_to_hls(*p(col("surface")))
+    _, ol, os_ = colorsys.rgb_to_hls(*p(col("on_surface")))
+    cache = {}
+
+    def remap_rgb(r, g, b):                                  # 0..255 ints -> 0..255 ints
+        key = (r, g, b)
+        if key in cache:
+            return cache[key]
+        fr, fg, fb = r / 255, g / 255, b / 255
+        h, l, s = colorsys.rgb_to_hls(fr, fg, fb)
+        chroma = max(fr, fg, fb) - min(fr, fg, fb)
+        hue = h * 360
+        out = key
+        if ((105 <= hue <= 118) or (185 <= hue <= 200)) and 0.10 <= chroma <= 0.30:   # accent family
+            nl = clamp(l + (pl - BASE_ACCENT_L), 0.04, 0.97)
+            ns = clamp(s * (ps / BASE_ACCENT_S), 0.0, 0.9)
+            nr = colorsys.hls_to_rgb(ph, nl, ns)
+            out = tuple(round(clamp(c) * 255) for c in nr)
+        elif chroma < 0.25 and not (170 <= hue <= 230 and chroma > 0.08):            # neutrals / cream text
+            t = (l - BASE_BG_L) / (BASE_TEXT_L - BASE_BG_L)
+            nl = clamp(sl + t * (ol - sl), 0.0, min(1.0, ol + 0.06))
+            ns = ss + clamp(t) * (os_ - ss)
+            nr = colorsys.hls_to_rgb(sh, nl, ns)
+            out = tuple(round(clamp(c) * 255) for c in nr)
+        cache[key] = out
+        return out
+
+    hex_re = re.compile(r"#([0-9a-fA-F]{6})\b")
+    rgba_re = re.compile(r"(rgba?)\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)")
+
+    def sub_hex(m):
+        h = m.group(1)
+        r, g, b = remap_rgb(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+        return "#%02x%02x%02x" % (r, g, b)
+
+    def sub_rgba(m):
+        kind, r, g, b, a = m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4)), m.group(5)
+        nr, ng, nb = remap_rgb(r, g, b)
+        return f"{kind}({nr}, {ng}, {nb}{', ' + a if a is not None else ''})"
+
+    def recolor_text(text):
+        return rgba_re.sub(sub_rgba, hex_re.sub(sub_hex, text))
+
+    def recolor_png(path):
+        from PIL import Image
+        im = Image.open(path).convert("RGBA")
+        px = im.load()
+        for y in range(im.height):
+            for x in range(im.width):
+                r, g, b, a = px[x, y]
+                if a:
+                    px[x, y] = remap_rgb(r, g, b) + (a,)
+        im.save(path)
+
+    # Build in a temp dir next to the target, then swap in (a half-written theme is never visible).
+    tmp = OUT + ".new"
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(tmp)
+    for sub in ("gtk-3.0", "gtk-4.0"):
+        for root, _dirs, files in os.walk(os.path.join(SRC, sub)):
+            rel = os.path.relpath(root, SRC)
+            os.makedirs(os.path.join(tmp, rel), exist_ok=True)
+            for name in files:
+                s, d = os.path.join(root, name), os.path.join(tmp, rel, name)
+                if name == "thumbnail.png":
+                    continue
+                if name.endswith((".css", ".svg")):
+                    open(d, "w", encoding="utf-8").write(recolor_text(open(s, encoding="utf-8").read()))
+                elif name.endswith(".png"):
+                    shutil.copy2(s, d)
+                    recolor_png(d)
+                else:
+                    shutil.copy2(s, d)
+    idx = open(os.path.join(SRC, "index.theme"), encoding="utf-8").read()
+    idx = re.sub(r"^Name=.*$", f"Name={THEME}", idx, flags=re.M)
+    idx = re.sub(r"^GtkTheme=.*$", f"GtkTheme={THEME}", idx, flags=re.M)
+    open(os.path.join(tmp, "index.theme"), "w", encoding="utf-8").write(idx)
+    open(os.path.join(tmp, ".generated-by-wallpaper-theme"), "w").write("")
+    shutil.rmtree(OUT + ".old", ignore_errors=True)
+    if os.path.exists(OUT):
+        if not os.path.exists(os.path.join(OUT, ".generated-by-wallpaper-theme")):
+            sys.exit(f"{OUT} exists and was not generated by wallpaper-theme; refusing to replace it")
+        os.rename(OUT, OUT + ".old")
+    os.rename(tmp, OUT)
+    shutil.rmtree(OUT + ".old", ignore_errors=True)
+
+    # ---- select the theme (once each; safe to re-run) ----
+    for ini in (os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")):
+        if not os.path.exists(ini):
+            continue
+        text = open(ini, encoding="utf-8").read()
+        if not re.search(rf"^gtk-theme-name={THEME}\s*$", text, flags=re.M):
+            text = re.sub(r"^gtk-theme-name=.*$", f"gtk-theme-name={THEME}", text, count=1, flags=re.M) \
+                if re.search(r"^gtk-theme-name=", text, flags=re.M) else text.replace("[Settings]\n", f"[Settings]\ngtk-theme-name={THEME}\n", 1)
+            open(ini, "w", encoding="utf-8").write(text)
+    stub = f'/* Generated stub (wallpaper-theme): the real CSS is the "{THEME}" theme. libadwaita apps ignore the\n   theme name and read only this file, so it imports the generated CSS. */\n@import url("file://{OUT}/gtk-4.0/gtk.css");\n'
+    for name in ("gtk.css", "gtk-dark.css"):
+        path = os.path.join(HOME, ".config/gtk-4.0", name)
+        if os.path.isdir(os.path.dirname(path)):
+            if os.path.islink(path):
+                os.unlink(path)
+            if not os.path.exists(path) or open(path, encoding="utf-8").read() != stub:
+                open(path, "w", encoding="utf-8").write(stub)
+    try:
+        cur = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"], capture_output=True, text=True, timeout=5).stdout.strip()
+        if cur != f"'{THEME}'":
+            subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "gtk-theme", THEME], timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    print(f"wallpaper-theme-gtk: theme built at {OUT} ({len(cache)} distinct colors remapped)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

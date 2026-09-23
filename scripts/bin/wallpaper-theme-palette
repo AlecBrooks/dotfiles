@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""wallpaper-theme-palette: build the full color palette JSON for a wallpaper, in a chosen style.
+
+Every consumer (matugen templates, starship, Kvantum, icons) reads the JSON this writes, so
+tuning it here changes the whole desktop consistently. Output has matugen's `--json hex` shape.
+
+Styles:
+  soft      (default) a source color that REPRESENTS the wallpaper (matugen's top-ranked,
+            population-weighted color), tonal-spot scheme, accents toned down (lighter pastels
+            are capped in lightness and saturation so big fills aren't glaring)
+  balanced  same source and scheme, accents left at Material's stock (bright pastel) tone
+  vivid     the original behaviour: prefer the MOST saturated patch in the image, stock tone
+  muted     representative source, `neutral` scheme (nearly monochrome, very calm)
+
+Surfaces (backgrounds/panels) are pinned to the original gruvbox neutrals by default
+(`--surfaces neutral`), so only the accents/text follow the wallpaper; `--surfaces wallpaper`
+lets matugen tint the backgrounds toward the wallpaper too (much darker/cooler on dark images).
+
+Usage: wallpaper-theme-palette --image PATH --out FILE [--style soft|balanced|vivid|muted]
+                               [--surfaces neutral|wallpaper] [--mode dark|light] [--config matugen.toml]
+"""
+import argparse
+import colorsys
+import json
+import os
+import re
+import subprocess
+import sys
+
+STYLES = ("soft", "balanced", "vivid", "muted")
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+CUSTOM = ("red", "green", "yellow", "blue", "magenta", "cyan", "orange")
+# How far accents are toned down in "soft": (max HSL lightness, max HSL saturation)
+SOFT_ACCENT = (0.66, 0.42)     # primary / secondary / tertiary
+SOFT_CUSTOM = (0.68, 0.50)     # the ANSI-ish hues stay a bit more distinct from each other
+
+# Dark-mode backgrounds pinned to the original gruvbox neutrals (the old kitty/Qt background was
+# #282828, Waybar/panels #1d2021). Raised surfaces step up the gruvbox ramp.
+NEUTRAL_SURFACES = {
+    "background": "#282828",
+    "surface": "#282828",
+    "surface_dim": "#1d2021",
+    "surface_container_lowest": "#1d2021",
+    "surface_container_low": "#282828",
+    "surface_container": "#32302f",
+    "surface_container_high": "#3c3836",
+    "surface_container_highest": "#504945",
+    "surface_bright": "#3c3836",
+    "surface_variant": "#3c3836",
+    "outline_variant": "#595959",      # inactive window border, as before
+}
+
+
+def matugen(args: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(["matugen", *args], capture_output=True, text=True)
+
+
+def ranked_colors(image: str) -> list[str]:
+    """matugen's source-color candidates, best score first (population-weighted)."""
+    res = matugen(["image", image, "--dry-run", "-d", "--prefer", "saturation"])
+    text = ANSI.sub("", res.stdout + res.stderr)
+    start = text.find("Ranked colors:")
+    if start < 0:
+        return []
+    return re.findall(r"\b\d+:\s*(#[0-9a-fA-F]{6})", text[start:])
+
+
+def is_grayish(hexstr: str) -> bool:
+    r, g, b = (int(hexstr[i:i + 2], 16) for i in (1, 3, 5))
+    return max(r, g, b) - min(r, g, b) < 3     # hue is meaningless for pure grays
+
+
+def to_rgb(hexstr: str):
+    return tuple(int(hexstr[i:i + 2], 16) / 255 for i in (1, 3, 5))
+
+
+def to_hex(rgb) -> str:
+    return "#%02x%02x%02x" % tuple(round(max(0.0, min(1.0, c)) * 255) for c in rgb)
+
+
+def soften(hexstr: str, lmax: float, smax: float) -> str:
+    h, l, s = colorsys.rgb_to_hls(*to_rgb(hexstr))
+    return to_hex(colorsys.hls_to_rgb(h, min(l, lmax), min(s, smax)))
+
+
+def load(res: subprocess.CompletedProcess) -> dict:
+    if res.returncode != 0 or not res.stdout.strip():
+        raise RuntimeError((res.stderr or "matugen produced no output").strip().splitlines()[-1])
+    return json.loads(res.stdout)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--image", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--style", default="soft", choices=STYLES)
+    ap.add_argument("--surfaces", default="neutral", choices=("neutral", "wallpaper"))
+    ap.add_argument("--mode", default="dark", choices=("dark", "light"))
+    ap.add_argument("--config", default=os.path.expanduser("~/.config/matugen/config.toml"))
+    args = ap.parse_args()
+
+    common = ["-c", args.config, "-m", args.mode, "--dry-run", "--json", "hex", "-q"]
+    source = None
+    scheme = "scheme-neutral" if args.style == "muted" else "scheme-tonal-spot"
+
+    if args.style != "vivid":
+        for cand in ranked_colors(args.image):
+            if not is_grayish(cand):
+                source = cand
+                break
+
+    if source is None:              # vivid, or the ranking couldn't be read: original behaviour
+        data = load(matugen(["image", args.image, "--prefer", "saturation", "-t", scheme, *common]))
+        source = "loudest patch (--prefer saturation)"
+    else:
+        data = load(matugen(["color", "hex", source, "-t", scheme, *common]))
+
+    if args.style == "soft":
+        colors = data["colors"]
+        for name in ("primary", "secondary", "tertiary") + CUSTOM:
+            if name not in colors:
+                continue
+            lmax, smax = SOFT_ACCENT if name in ("primary", "secondary", "tertiary") else SOFT_CUSTOM
+            for variant in colors[name].values():           # default / dark / light entries
+                variant["color"] = soften(variant["color"], lmax, smax)
+
+    if args.surfaces == "neutral" and args.mode == "dark":
+        colors = data["colors"]
+        for name, value in NEUTRAL_SURFACES.items():
+            if name in colors:
+                for variant in ("default", "dark"):
+                    if variant in colors[name]:
+                        colors[name][variant]["color"] = value
+
+    with open(args.out, "w", encoding="utf-8") as fh:
+        json.dump(data, fh)
+    print(f"style={args.style} surfaces={args.surfaces} scheme={scheme} source={source} "
+          f"primary={data['colors']['primary']['default']['color']}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        print(f"wallpaper-theme-palette: {exc}", file=sys.stderr)
+        sys.exit(1)

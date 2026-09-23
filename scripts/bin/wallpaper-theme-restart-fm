@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""wallpaper-theme-restart-fm: restart PCManFM-Qt so it picks up new Kvantum colors and icons.
+
+Qt apps read their style and icon theme only at startup (verified: neither a Kvantum theme
+switch nor kvantummanager updates a running window), so a running file manager stays on the
+previous wallpaper's look. This restarts it, keeping your place:
+
+  * only if the theme changed since the file manager started (~/.cache/wallpaper-theme/.changed-at),
+  * never while a file operation / dialog is open (it would be aborted),
+  * reopening the same folder(s) -- recovered from the process's inotify watches -- and moving
+    the new window back to the workspace the old one was on.
+
+Usage: wallpaper-theme-restart-fm   (called by wallpaper-theme; safe to run by hand)
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+CHANGED_AT = os.path.join(HOME, ".cache/wallpaper-theme/.changed-at")
+BUSY = re.compile(
+    r"(copy|copying|moving|deleting|progress|confirm|properties|preferences|rename|file operation)",
+    re.IGNORECASE,
+)
+# Watches the file manager holds that aren't folders you're browsing.
+INTERNAL = ("/.config/", "/.local/share/", "/.cache/")
+
+
+def log(msg: str) -> None:
+    print(f"[{time.strftime('%Y-%m-%dT%H:%M:%S%z')}] restart-fm: {msg}", flush=True)
+
+
+def hypr_clients() -> list[dict]:
+    out = subprocess.run(["hyprctl", "-j", "clients"], capture_output=True, text=True, timeout=5)
+    return [c for c in json.loads(out.stdout) if c.get("class") == "pcmanfm-qt"]
+
+
+def watched_inodes(pid: int) -> list[tuple[int, int]]:
+    """(inode, st_dev) of every directory the process watches with inotify, in watch order."""
+    found: list[tuple[int, int]] = []
+    fd_dir = f"/proc/{pid}/fd"
+    for fd in sorted(os.listdir(fd_dir), key=int):
+        try:
+            if "inotify" not in os.readlink(f"{fd_dir}/{fd}"):
+                continue
+            lines = open(f"/proc/{pid}/fdinfo/{fd}", encoding="utf-8").read().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            m = re.match(r"inotify wd:\S+ ino:([0-9a-f]+) sdev:([0-9a-f]+)", line)
+            if m:
+                sdev = int(m.group(2), 16)
+                # kernel dev_t (20-bit minor) -> userspace st_dev
+                found.append((int(m.group(1), 16), os.makedev(sdev >> 20, sdev & 0xFFFFF)))
+    return found
+
+
+def resolve_folders(pid: int) -> list[str]:
+    inodes = watched_inodes(pid)
+    if not inodes:
+        return []
+    wanted = {ino for ino, _ in inodes}
+    expr = ["-inum", str(next(iter(wanted)))]
+    for ino in list(wanted)[1:]:
+        expr += ["-o", "-inum", str(ino)]
+    cmd = (
+        ["find", HOME, "-xdev", "(", "-name", ".git", "-o", "-name", "node_modules", "-o", "-name", "Steam",
+         "-o", "-name", ".cache", ")", "-prune", "-o", "-type", "d", "("] + expr + [")", "-print"]
+    )
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    except subprocess.TimeoutExpired:
+        return []
+    by_key = {}
+    for path in res.stdout.splitlines():
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        by_key[(st.st_ino, st.st_dev)] = path
+    paths = [by_key[k] for k in inodes if k in by_key]
+    real = [p for p in dict.fromkeys(paths) if not any(seg in os.path.realpath(p) + "/" for seg in INTERNAL)]
+    return real
+
+
+def process_age_seconds(pid: int) -> float:
+    out = subprocess.run(["ps", "-o", "etimes=", "-p", str(pid)], capture_output=True, text=True)
+    return float(out.stdout.strip() or 0)
+
+
+def main() -> int:
+    clients = hypr_clients()
+    if not clients:
+        log("file manager not running; nothing to do (a new one will use the new theme)")
+        return 0
+    pid = clients[0]["pid"]
+
+    # Only restart if the theme changed after the file manager started.
+    try:
+        changed_at = float(open(CHANGED_AT).read().strip())
+    except (OSError, ValueError):
+        changed_at = 0.0
+    started_at = time.time() - process_age_seconds(pid)
+    if started_at >= changed_at - 1:
+        log(f"file manager (pid {pid}) started after the last theme change; already current")
+        return 0
+
+    busy = [c["title"] for c in clients if BUSY.search(c.get("title", ""))]
+    if busy:
+        log(f"skipping: a file operation/dialog looks open ({busy[0]!r}); restart it yourself when done")
+        return 0
+
+    folders = resolve_folders(pid) or [HOME]
+    workspace = clients[0]["workspace"]["id"]
+    log(f"restarting pid {pid}; reopening {folders} on workspace {workspace}")
+
+    subprocess.run(["pcmanfm-qt", "--quit"], timeout=8, capture_output=True)
+    for _ in range(40):
+        if not os.path.exists(f"/proc/{pid}"):
+            break
+        time.sleep(0.1)
+    else:
+        log("old file manager did not exit; leaving it alone")
+        return 1
+
+    before = {c["pid"] for c in hypr_clients()}
+    subprocess.Popen(
+        ["pcmanfm-qt", *folders],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    for _ in range(100):
+        time.sleep(0.1)
+        new = [c for c in hypr_clients() if c["pid"] not in before]
+        if new:
+            win = new[0]
+            if win["workspace"]["id"] != workspace:
+                subprocess.run(
+                    ["hyprctl", "dispatch",
+                     f'hl.dsp.window.move({{ workspace = {workspace}, follow = false, window = "pid:{win["pid"]}" }})'],
+                    capture_output=True, timeout=5,
+                )
+            log(f"reopened as pid {win['pid']}")
+            return 0
+    log("started the new file manager but no window appeared")
+    return 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as exc:  # never let a helper crash the theme run
+        log(f"FAILED: {exc!r}")
+        sys.exit(1)

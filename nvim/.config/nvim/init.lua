@@ -1,5 +1,8 @@
 vim.g.mapleader = " "
 
+vim.opt.number = true
+vim.opt.fillchars = { eob = " " }
+
 -- Bootstrap lazy.nvim
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.loop.fs_stat(lazypath) then

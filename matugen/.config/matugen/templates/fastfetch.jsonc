@@ -1,0 +1,36 @@
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
+  "logo": {
+    "type": "kitty-icat",
+    "source": "~/.config/fastfetch/airbender.gif",
+    "width": 44,
+    "height": 18
+  },
+  "display": {
+    "separator": ": ",
+    "color": {
+      "keys": "{{colors.primary.default.hex}}",
+      "title": "{{colors.primary.default.hex}}",
+      "separator": "{{colors.outline.default.hex}}"
+    }
+  },
+  "modules": [
+    "title",
+    "separator",
+    "os",
+    "host",
+    "kernel",
+    "uptime",
+    "packages",
+    "shell",
+    "wm",
+    "terminal",
+    "cpu",
+    "gpu",
+    "memory",
+    "disk",
+    "localip",
+    "break",
+    "colors"
+  ]
+}
