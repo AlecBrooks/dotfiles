@@ -73,8 +73,11 @@ local menu        = "hyprlauncher"
 
 hl.on("hyprland.start", function ()
     -- Wallpaper
+    -- Push the session vars into the systemd user manager first: some display
+    -- managers (e.g. Ly) don't, and linux-wallpaperengine exits without
+    -- XDG_SESSION_TYPE ("window server detection failed").
     hl.exec_cmd(
-        "sh -lc 'systemctl --user start wallpaper-picker-start >/tmp/linux-wallpaperengine.log 2>&1 &'"
+        "sh -lc 'dbus-update-activation-environment --systemd XDG_SESSION_TYPE XDG_SESSION_DESKTOP XDG_CURRENT_DESKTOP WAYLAND_DISPLAY; systemctl --user start wallpaper-picker-start >/tmp/linux-wallpaperengine.log 2>&1 &'"
     )
 
     -- VPN
@@ -166,6 +169,16 @@ hl.config({
 
     animations = {
         enabled = true,
+    },
+})
+
+-- No built-in anime wallpaper / logo: if the wallpaper engine dies, show a
+-- plain terminal-colored background instead.
+hl.config({
+    misc = {
+        force_default_wallpaper = 0,
+        disable_hyprland_logo   = true,
+        background_color        = 0xff282828,
     },
 })
 
