@@ -85,8 +85,15 @@ run_file() {
     return "$status"
 }
 
+# Turn off mouse tracking a program may have left enabled (e.g. a TUI that
+# crashed or was Ctrl-C'd); otherwise mouse moves leak into the shell as text.
+reset_mouse_modes() {
+    printf '\e[?9l\e[?1000l\e[?1001l\e[?1002l\e[?1003l\e[?1004l\e[?1005l\e[?1006l\e[?1015l\e[?1016l'
+}
+
 # When called inside the persistent build terminal, run the file normally.
 if [[ "${SUBLIME_BUILD_WORKER:-0}" == "1" ]]; then
+    trap reset_mouse_modes EXIT
     run_file "$FILE"
     exit $?
 fi
