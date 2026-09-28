@@ -93,11 +93,6 @@ hl.on("hyprland.start", function ()
         "sh -lc 'sleep 1; until curl -fsS --max-time 5 https://discord.com/api/v10/gateway >/dev/null; do sleep 2; done; discord --disable-gpu --start-minimized >/tmp/discord.log 2>&1 &'"
     )
 
-    -- VPN
-    hl.exec_cmd(
-        "sh -lc 'sleep 6; protonvpn-app >/tmp/protonvpn.log 2>&1 &'"
-    )
-
     -- Proton Pass
     hl.exec_cmd(
         "sh -lc 'sleep 7; proton-pass &'"
@@ -272,6 +267,12 @@ hl.config({
 hl.device({
     name        = "epic-mouse-v1",
     sensitivity = -0.5,
+})
+
+-- Logitech G502: slightly slower than stock
+hl.device({
+    name        = "logitech-g502-1",
+    sensitivity = -0.1,
 })
 
 

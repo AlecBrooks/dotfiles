@@ -339,6 +339,7 @@ window#waybar {
 
 /* Modules fill the bar, but also draw the cyan line over themselves */
 #idle_inhibitor,
+#custom-vpn,
 #custom-weather,
 #pulseaudio,
 #network,
@@ -405,6 +406,7 @@ window#waybar {
 #workspaces button,
 #cava,
 #idle_inhibitor,
+#custom-vpn,
 #custom-weather,
 #pulseaudio,
 #power-profiles-daemon,
@@ -592,3 +594,12 @@ tooltip {
 tooltip label {
     color: @on_surface;
 }
+
+/* VPN padlock (custom/vpn): locked = exit node on, unlocked = off, red = selected but unreachable */
+#custom-vpn {
+    padding: 0 10px;
+    background-color: @surface_dim;
+}
+#custom-vpn.on { color: @primary; }
+#custom-vpn.off { color: @on_surface_variant; }
+#custom-vpn.down { color: @error; }

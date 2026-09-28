@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""waybar-vpn: padlock for the Tailscale exit node (unraid-proton = home server -> Proton VPN).
+
+  waybar-vpn          print Waybar JSON: locked (exit node on), unlocked (off), or
+                      class "down" when the exit node is selected but unreachable
+                      (traffic is blocked then, not leaked)
+  waybar-vpn toggle   switch the exit node on/off, then refresh the Waybar module
+
+Needs `tailscale up --operator=mythra` (already set) so no sudo is required.
+"""
+import json
+import subprocess
+import sys
+
+EXIT_NODE = "unraid-proton"
+SIGNAL = 8          # matches "signal": 8 in the Waybar config
+LOCKED = ""   # nerd-font lock
+UNLOCKED = ""  # nerd-font unlock
+
+
+def status():
+    try:
+        out = subprocess.run(["tailscale", "status", "--json"], capture_output=True, text=True, timeout=5)
+        return json.loads(out.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        return None
+
+
+def show():
+    st = status()
+    if st is None or st.get("BackendState") != "Running":
+        print(json.dumps({"text": UNLOCKED, "class": "off", "tooltip": "Tailscale is not running: no VPN"}))
+        return
+    ex = st.get("ExitNodeStatus")
+    if not ex:
+        print(json.dumps({"text": UNLOCKED, "class": "off",
+                          "tooltip": "VPN off: direct internet (home IP)\nClick to route through unraid-proton"}))
+    elif ex.get("Online"):
+        print(json.dumps({"text": LOCKED, "class": "on",
+                          "tooltip": "VPN on: home server -> Proton\nClick to turn off"}))
+    else:
+        print(json.dumps({"text": LOCKED, "class": "down",
+                          "tooltip": "VPN selected but the exit node is offline:\ninternet is BLOCKED (no leak)\nClick to turn the VPN off"}))
+
+
+def toggle():
+    st = status() or {}
+    if st.get("ExitNodeStatus"):
+        cmd = ["tailscale", "set", "--exit-node="]
+    else:
+        cmd = ["tailscale", "set", f"--exit-node={EXIT_NODE}", "--exit-node-allow-lan-access=true"]
+    subprocess.run(cmd, capture_output=True, timeout=15)
+    subprocess.run(["pkill", f"-RTMIN+{SIGNAL}", "-x", "waybar"], capture_output=True)
+
+
+if __name__ == "__main__":
+    toggle() if sys.argv[1:] == ["toggle"] else show()
