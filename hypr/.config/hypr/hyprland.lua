@@ -74,6 +74,7 @@ local calc     = "kcalc"
 local weather  = "/home/mythra/bin/focus-or-launch kweather kweather"
 local sublime  = "subl -n"   -- always a fresh window (weather still focuses the existing one)
 local obsidian = "/home/mythra/bin/focus-or-launch obsidian obsidian"   -- focus it if open, else start it
+local calendar = "/home/mythra/bin/focus-or-launch '^calcurse$' kitty --class calcurse --title Calendar calcurse"   -- calcurse (Radicale-synced) in its own kitty
 
 -------------------
 ---- AUTOSTART ----
@@ -91,11 +92,6 @@ hl.on("hyprland.start", function ()
     -- Discord
     hl.exec_cmd(
         "sh -lc 'sleep 1; until curl -fsS --max-time 5 https://discord.com/api/v10/gateway >/dev/null; do sleep 2; done; discord --disable-gpu --start-minimized >/tmp/discord.log 2>&1 &'"
-    )
-
-    -- Proton Pass
-    hl.exec_cmd(
-        "sh -lc 'sleep 7; proton-pass &'"
     )
 
     -- Steam
@@ -317,6 +313,7 @@ hl.bind(mainMod .. " + C", hl.dsp.exec_cmd(calc))
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd(weather))
 hl.bind(mainMod .. " + S", hl.dsp.exec_cmd(sublime))
 hl.bind(mainMod .. " + O", hl.dsp.exec_cmd(obsidian))
+hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(calendar))
 
 
 local closeWindowBind = hl.bind(mainMod .. " + X", hl.dsp.window.close())
