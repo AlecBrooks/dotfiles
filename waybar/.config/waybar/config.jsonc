@@ -17,6 +17,7 @@
     ],
 
     "modules-right": [
+        "custom/vpn",
         "custom/weather",
         "pulseaudio",
         "temperature",
@@ -152,6 +153,14 @@
         },
         "tooltip-format": "MPD (connected)",
         "tooltip-format-disconnected": "MPD (disconnected)"
+    },
+    // Padlock: Tailscale exit node (home server -> Proton VPN). Click toggles; ~/bin/waybar-vpn
+    "custom/vpn": {
+        "exec": "/home/mythra/bin/waybar-vpn",
+        "return-type": "json",
+        "interval": 10,
+        "signal": 8,
+        "on-click": "/home/mythra/bin/waybar-vpn toggle"
     },
     // Current temperature (KWeather's saved location, via Open-Meteo); click opens/focuses KWeather
     "custom/weather": {
