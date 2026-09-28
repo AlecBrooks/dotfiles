@@ -1,0 +1,17 @@
+appearance.calendarview=monthly
+appearance.compactpanels=no
+appearance.defaultpanel=calendar
+appearance.layout=1
+appearance.notifybar=yes
+appearance.sidebarwidth=0
+appearance.theme=cyan on default
+appearance.todoview=hide-completed
+appearance.headingpos=right-justified
+general.autosave=yes
+general.autogc=no
+general.confirmdelete=yes
+general.confirmquit=no
+general.firstdayofweek=sunday
+general.progressbar=yes
+format.notifytime=%I:%M %p
+format.notifydate=%a %F

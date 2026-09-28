@@ -7,6 +7,7 @@ bluez
 bluez-utils
 breeze
 btop
+calcurse
 cava
 cliphist
 cmake
@@ -42,12 +43,14 @@ imv
 jq
 jupyterlab
 kdenlive
+khard
 kitty
 kvantum
 kvantum-qt5
 lazygit
 libpulse
 libratbag
+libsecret
 libuv
 linux
 linux-firmware
@@ -70,6 +73,7 @@ pipewire-pulse
 polkit-kde-agent
 postgresql
 procs
+python-httplib2
 python-matplotlib
 python-pandas
 python-pillow
@@ -101,6 +105,7 @@ uv
 uwsm
 v4l2loopback-dkms
 v4l2loopback-utils
+vdirsyncer
 vim
 visidata
 vlc

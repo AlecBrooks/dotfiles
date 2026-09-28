@@ -20,6 +20,7 @@ STOW_PACKAGES=(
   scripts
   nvim
   fastfetch
+  pim
 )
 
 MANAGED_PATHS=(
@@ -37,6 +38,11 @@ MANAGED_PATHS=(
   ".config/gtk-4.0"
   ".config/ytjukebox"
   ".config/fastfetch"
+  ".config/calcurse"
+  ".config/vdirsyncer"
+  ".config/khard"
+  ".config/systemd/user/calcurse-sync.service"
+  ".config/systemd/user/calcurse-sync.timer"
   "bin"
 )
 
