@@ -56,3 +56,7 @@ output_path = '~/.config/qt6ct/colors/wallpaper.conf'
 [templates.qt5ct]
 input_path  = '~/.config/matugen/templates/qt-colors.conf'
 output_path = '~/.config/qt5ct/colors/wallpaper.conf'
+
+[templates.startpage]
+input_path  = '~/.config/matugen/templates/startpage-colors.css'
+output_path = '~/.cache/wallpaper-theme/startpage-colors.css'
