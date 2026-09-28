@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Watch a YouTube stream with its chat: opens one kitty window, video on top
+# (drawn in the terminal by mpv) and ytchat below. Closing either half, or
+# quitting mpv / Ctrl+C in the chat, closes the other half too.
+#
+# Usage: ytwatch <youtube-url> [chat-percent]   (chat takes 30% by default)
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+# ---- one half of the window (run by kitty from the session file) ----------
+if [[ "${1:-}" == "--pane" ]]; then
+    role=$2 other=$3 dir=$4 url=$5
+    rm -f "$dir/session.kitty"
+    # Run in a foreground subshell that execs the program, so its PID is known
+    # (the other half kills it) and it keeps the terminal for keys and Ctrl+C.
+    if [[ "$role" == video ]]; then
+        ( echo "$BASHPID" > "$dir/video.pid"
+          exec mpv --vo=kitty --vo-kitty-use-shm=yes --really-quiet \
+              --ytdl-format='bv*[height<=720]+ba/b[height<=720]/b' "$url" ) || true
+    else
+        ( echo "$BASHPID" > "$dir/chat.pid"
+          exec "$HERE/ytchat" "$url" ) || true
+    fi
+    rm -f "$dir/$role.pid"
+    # Stop the other half, but only if that PID is still the program we started.
+    if [[ -f "$dir/$other.pid" ]]; then
+        pid=$(cat "$dir/$other.pid")
+        if [[ "$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)" == *"$url"* ]]; then
+            kill "$pid" 2>/dev/null || true
+            for _ in {1..20}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+            kill -KILL "$pid" 2>/dev/null || true
+        fi
+    fi
+    rmdir "$dir" 2>/dev/null || true
+    exit 0
+fi
+
+if [[ $# -lt 1 || "$1" == -* ]]; then
+    echo "usage: ytwatch <youtube-url> [chat-percent]" >&2
+    exit 2
+fi
+url=$1
+chat_pct=${2:-30}
+dir=$(mktemp -d -t ytwatch-XXXXXX)
+
+q() { printf '%q' "$1"; }
+cat > "$dir/session.kitty" <<EOF
+layout splits
+launch --title "ytwatch: video" $(q "$HERE/ytwatch") --pane video chat $(q "$dir") $(q "$url")
+launch --location=hsplit --bias=$chat_pct --title "ytwatch: chat" $(q "$HERE/ytwatch") --pane chat video $(q "$dir") $(q "$url")
+EOF
+
+kitty --detach --class ytwatch --title "ytwatch" --session "$dir/session.kitty"

@@ -7,6 +7,8 @@
 
 alias ls='ls --color=auto'
 alias grep='grep --color=auto'
+# Watch a YouTube link/stream inside kitty: yt <url> [extra mpv args]
+yt() { mpv --vo=kitty --vo-kitty-use-shm=yes --really-quiet --ytdl-format='bv*[height<=720]+ba/b[height<=720]/b' "$@"; }
 export EDITOR=nvim
 export VISUAL=nvim
 PS1='[\u@\h \W]\$ '
