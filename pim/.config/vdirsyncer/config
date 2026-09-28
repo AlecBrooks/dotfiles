@@ -1,0 +1,20 @@
+[general]
+status_path = "~/.local/share/vdirsyncer/status/"
+
+[pair contacts]
+a = "contacts_local"
+b = "contacts_radicale"
+collections = ["allcontacts"]
+conflict_resolution = "b wins"
+metadata = ["displayname"]
+
+[storage contacts_local]
+type = "filesystem"
+path = "~/.local/share/contacts/"
+fileext = ".vcf"
+
+[storage contacts_radicale]
+type = "carddav"
+url = "https://dav.abrooks.dev/alec/"
+username = "alec"
+password.fetch = ["command", "secret-tool", "lookup", "service", "radicale", "user", "alec"]

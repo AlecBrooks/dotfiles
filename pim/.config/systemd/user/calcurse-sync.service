@@ -1,0 +1,8 @@
+[Unit]
+Description=Sync calcurse with Radicale (dav.abrooks.dev)
+
+[Service]
+Type=oneshot
+# skip while calcurse is open: it syncs itself on load/save, and must not have files changed under it
+ExecCondition=/bin/sh -c '! pgrep -x calcurse >/dev/null'
+ExecStart=/usr/bin/calcurse-caldav

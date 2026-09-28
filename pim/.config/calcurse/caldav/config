@@ -1,0 +1,14 @@
+# calcurse <-> Radicale (dav.abrooks.dev) sync. Password comes from the GNOME keyring.
+[General]
+Binary = calcurse
+Hostname = dav.abrooks.dev
+Path = /alec/mycalendar-2026-09-28/
+InsecureSSL = No
+HTTPS = Yes
+SyncFilter = cal,todo
+DryRun = No
+Verbose = No
+
+[Auth]
+Username = alec
+PasswordCommand = secret-tool lookup service radicale user alec
