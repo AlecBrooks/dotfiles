@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""waybar-shelnia: a globe for Shelnia, with the number of new alerts.
+
+  waybar-shelnia          print Waybar JSON: the globe, plus the count when there's
+                          something new (class "new"), "quiet" when there isn't,
+                          "offline" when the server can't be reached
+  waybar-shelnia open     focus the Shelnia window, or open one in kitty; the count
+                          refreshes when it closes
+
+Asks `ssh <host> alerts count`, which only reads (nothing gets marked seen, and
+it doesn't show you as online). The SSH connection is kept open for 10 minutes
+and reused, so most checks don't log in again.
+
+The address is NOT in this (public) repo. It lives in ~/.config/shelnia-bar/config:
+    host=203.0.113.7        # or a name, once there is one
+    port=22                 # optional
+    identity=~/.ssh/id_x    # optional: a key other than your default ones
+    known_hosts=~/some/file # optional: instead of ~/.ssh/known_hosts
+No config: the module stays hidden.
+"""
+import json
+import os
+import shlex
+import subprocess
+import sys
+
+SIGNAL = 9  # matches "signal": 9 in the Waybar config
+GLOBE = "\uf0ac"  # nerd-font globe (Font Awesome)
+CONFIG = os.environ.get("SHELNIA_BAR_CONFIG", os.path.expanduser("~/.config/shelnia-bar/config"))
+WINDOW_CLASS = "shelnia"
+
+
+def config():
+    conf = {}
+    try:
+        with open(CONFIG) as f:
+            for line in f:
+                key, sep, value = line.split("#", 1)[0].partition("=")
+                if sep:
+                    conf[key.strip()] = value.strip()
+    except OSError:
+        pass
+    return conf
+
+
+def ssh_args(conf, batch=True):
+    args = ["ssh", "-p", conf.get("port", "22")]
+    if conf.get("identity"):
+        args += ["-i", os.path.expanduser(conf["identity"]), "-o", "IdentitiesOnly=yes"]
+    if conf.get("known_hosts"):
+        args += ["-o", "UserKnownHostsFile=" + os.path.expanduser(conf["known_hosts"])]
+    if batch:
+        runtime = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+        args += ["-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "LogLevel=ERROR",
+                 "-o", "ControlMaster=auto", "-o", "ControlPersist=10m",
+                 "-o", f"ControlPath={runtime}/shelnia-bar-%C"]
+    return args + [conf["host"]]
+
+
+def show():
+    conf = config()
+    if not conf.get("host"):
+        print(json.dumps({"text": ""}))  # nothing configured: hidden
+        return
+    try:
+        out = subprocess.run(ssh_args(conf) + ["alerts", "count"], capture_output=True, text=True, timeout=20)
+        answer = out.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        out, answer = None, ""
+    if out is not None and out.returncode == 0 and answer.isdigit():
+        n = int(answer)
+        if n:
+            print(json.dumps({"text": f"{GLOBE}  {n}", "class": "new",
+                              "tooltip": f"Shelnia: {n} new alert{'s' if n != 1 else ''}\nClick to connect"}))
+        else:
+            print(json.dumps({"text": GLOBE, "class": "quiet", "tooltip": "Shelnia: nothing new\nClick to connect"}))
+    elif out is not None and out.returncode == 1 and "No account" in answer:
+        print(json.dumps({"text": GLOBE, "class": "offline",
+                          "tooltip": "Shelnia: this key has no account there\nClick to connect"}))
+    else:
+        print(json.dumps({"text": GLOBE, "class": "offline",
+                          "tooltip": "Shelnia: can't reach the server\nClick to try connecting"}))
+
+
+def open_window():
+    conf = config()
+    if not conf.get("host"):
+        return
+    # closing the window refreshes the count right away (you may have read things)
+    session = shlex.join(ssh_args(conf, batch=False)) + f"; pkill -RTMIN+{SIGNAL} -x waybar"
+    subprocess.Popen([os.path.expanduser("~/bin/focus-or-launch"), WINDOW_CLASS,
+                      "kitty", "--class", WINDOW_CLASS, "--title", "Shelnia", "sh", "-c", session],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+
+
+if __name__ == "__main__":
+    open_window() if sys.argv[1:] == ["open"] else show()

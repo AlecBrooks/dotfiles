@@ -17,6 +17,7 @@
     ],
 
     "modules-right": [
+        "custom/shelnia",
         "custom/vpn",
         "custom/weather",
         "pulseaudio",
@@ -153,6 +154,15 @@
         },
         "tooltip-format": "MPD (connected)",
         "tooltip-format-disconnected": "MPD (disconnected)"
+    },
+    // Shelnia globe: the number of new alerts (ssh <host> alerts count); click opens/focuses it.
+    // The host lives in ~/.config/shelnia-bar/config, not in this repo.
+    "custom/shelnia": {
+        "exec": "/home/mythra/bin/waybar-shelnia",
+        "return-type": "json",
+        "interval": 60,
+        "signal": 9,
+        "on-click": "/home/mythra/bin/waybar-shelnia open"
     },
     // Padlock: Tailscale exit node (home server -> Proton VPN). Click toggles; ~/bin/waybar-vpn
     "custom/vpn": {
