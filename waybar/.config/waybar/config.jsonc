@@ -17,6 +17,7 @@
     ],
 
     "modules-right": [
+        "custom/globe",
         "custom/vpn",
         "custom/weather",
         "pulseaudio",
@@ -153,6 +154,14 @@
         },
         "tooltip-format": "MPD (connected)",
         "tooltip-format-disconnected": "MPD (disconnected)"
+    },
+    // Globe: an alert counter from a private script (~/.local/bin, not in this repo).
+    "custom/globe": {
+        "exec": "/home/mythra/.local/bin/statusglobe",
+        "return-type": "json",
+        "interval": 60,
+        "signal": 9,
+        "on-click": "/home/mythra/.local/bin/statusglobe open"
     },
     // Padlock: Tailscale exit node (home server -> Proton VPN). Click toggles; ~/bin/waybar-vpn
     "custom/vpn": {
