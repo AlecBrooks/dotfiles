@@ -10,7 +10,7 @@ Today's date is ${TODAY}. Write a short daily journal entry for my personal
 Obsidian vault at ~/GitHub/Obsidian, summarizing what we worked on today.
 
 Steps:
-1. Check ~/CLAUDE.md for any content dated ${TODAY} across its project
+1. Check ~/.claude/CLAUDE.md for any content dated ${TODAY} across its project
    notes/log sections -- this is the primary log of dev work and the best
    source of what actually happened today.
 2. For each of these repos, if it exists, run:
