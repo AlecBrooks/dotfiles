@@ -22,6 +22,7 @@
         "custom/weather",
         "pulseaudio",
         "temperature",
+        "custom/gpu",
         "clock",
         "group/tray-drawer",
         "custom/power"
@@ -178,6 +179,12 @@
         "interval": 900,
         "on-click": "/home/mythra/bin/focus-or-launch kweather kweather"
     },
+    // GPU hotspot temp; turns amber/red near the driver's limits and sends a notification when hot. ~/bin/waybar-gpu
+    "custom/gpu": {
+        "exec": "/home/mythra/bin/waybar-gpu",
+        "return-type": "json",
+        "interval": 5
+    },
     "idle_inhibitor": {
         "format": "{icon}",
         "format-icons": {
@@ -220,10 +227,13 @@
         "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>",
         "format-alt": "{:%Y-%m-%d}"
     },
+    // CPU temp (k10temp Tctl). PCI path because the hwmonN number can change between boots.
+    // 5600X throttles at 95, so red from 85.
     "temperature": {
-        // "thermal-zone": 2,
-        // "hwmon-path": "/sys/class/hwmon/hwmon2/temp1_input",
-        "critical-threshold": 80,
+        "hwmon-path-abs": "/sys/devices/pci0000:00/0000:00:18.3/hwmon",
+        "input-filename": "temp1_input",
+        "critical-threshold": 85,
+        "tooltip-format": "CPU (Tctl) {temperatureC}°C",
         // "format-critical": "{temperatureC}°C {icon}",
         "format": "{temperatureC}°C {icon}",
         "format-icons": ["", "", ""]

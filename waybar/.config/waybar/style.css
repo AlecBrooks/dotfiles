@@ -342,6 +342,7 @@ window#waybar {
 #custom-globe,
 #custom-vpn,
 #custom-weather,
+#custom-gpu,
 #pulseaudio,
 #network,
 #power-profiles-daemon,
@@ -410,6 +411,7 @@ window#waybar {
 #custom-globe,
 #custom-vpn,
 #custom-weather,
+#custom-gpu,
 #pulseaudio,
 #power-profiles-daemon,
 #temperature,
@@ -502,10 +504,13 @@ window#waybar {
     color: @surface_dim;
 }
 
+/* CPU temp: plain like custom/gpu, red at the critical threshold (85) */
 #temperature {
-    background-color: @orange;
-    color: @surface_dim;
+    padding: 0 10px;
+    background-color: @surface_dim;
+    color: @on_surface;
 }
+#temperature.critical { color: @surface_dim; background-color: #fb4934; font-weight: bold; }
 
 
 /* Clock and tray */
@@ -615,3 +620,14 @@ tooltip label {
 #custom-vpn.on { color: @primary; }
 #custom-vpn.off { color: @on_surface_variant; }
 #custom-vpn.down { color: @error; }
+
+/* GPU temp (custom/gpu): plain = fine, amber = warm, red = hot, flashing red = near the limit */
+#custom-gpu {
+    padding: 0 10px;
+    background-color: @surface_dim;
+    color: @on_surface;
+}
+#custom-gpu.warm { color: #fabd2f; }
+#custom-gpu.hot { color: @surface_dim; background-color: #fb4934; font-weight: bold; }
+#custom-gpu.critical { color: @surface_dim; background-color: #fb4934; font-weight: bold; animation: gpu-blink 1s steps(2) infinite; }
+@keyframes gpu-blink { to { background-color: @surface_dim; color: #fb4934; } }
