@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""waybar-gpu: GPU temperature for a Waybar custom module (JSON on stdout), with overheat warnings.
+
+Reads the amdgpu hwmon sensors (edge, junction/hotspot, mem). The bar shows the junction temp,
+since that one gets closest to its limit. Levels are relative to each sensor's own critical
+temp from the driver: warm = crit-10, hot = crit-5, critical = crit-2 (RX 6650 XT: junction
+100/105/108, mem 90/95/98). The worst sensor sets the CSS class (ok/warm/hot/critical).
+
+Going up to hot or critical sends a desktop notification; dropping back below hot sends one more.
+Last level is kept in ~/.cache/waybar-gpu.state so each change notifies only once.
+
+Waybar: "custom/gpu": { "exec": "~/bin/waybar-gpu", "return-type": "json", "interval": 5 }
+"""
+import glob
+import json
+import os
+import subprocess
+
+STATE = os.path.expanduser("~/.cache/waybar-gpu.state")
+ICON = "\U000f08ae"  # nerd-font expansion card
+LEVELS = ["ok", "warm", "hot", "critical"]
+MARGINS = {"warm": 10, "hot": 5, "critical": 2}  # degrees below the sensor's crit
+
+
+def hwmon():
+    for h in glob.glob("/sys/class/drm/card*/device/hwmon/hwmon*"):
+        try:
+            with open(os.path.join(h, "name")) as f:
+                if f.read().strip() == "amdgpu":
+                    return h
+        except OSError:
+            pass
+    return None
+
+
+def read(path, scale=1):
+    try:
+        with open(path) as f:
+            return int(f.read().strip()) / scale
+    except (OSError, ValueError):
+        return None
+
+
+def sensors(h):
+    out = []
+    for inp in sorted(glob.glob(os.path.join(h, "temp*_input"))):
+        base = inp[:-len("_input")]
+        try:
+            with open(base + "_label") as f:
+                label = f.read().strip()
+        except OSError:
+            label = os.path.basename(base)
+        temp = read(inp, 1000)
+        crit = read(base + "_crit", 1000) or 100
+        if temp is not None:
+            out.append((label, temp, crit))
+    return out
+
+
+def level(temp, crit):
+    lvl = "ok"
+    for name in ("warm", "hot", "critical"):
+        if temp >= crit - MARGINS[name]:
+            lvl = name
+    return lvl
+
+
+def notify(urgency, title, body):
+    try:
+        subprocess.run(["notify-send", "-u", urgency, "-a", "GPU", "-i", "dialog-warning", title, body],
+                       timeout=5, capture_output=True)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def track(lvl, summary):
+    try:
+        with open(STATE) as f:
+            prev = f.read().strip()
+    except OSError:
+        prev = "ok"
+    if prev not in LEVELS:
+        prev = "ok"
+    if lvl != prev:
+        try:
+            with open(STATE, "w") as f:
+                f.write(lvl)
+        except OSError:
+            pass
+        up = LEVELS.index(lvl) > LEVELS.index(prev)
+        if up and lvl == "critical":
+            notify("critical", "GPU near its thermal limit", summary + "\nStop the heavy GPU load now.")
+        elif up and lvl == "hot":
+            notify("critical", "GPU running hot", summary)
+        elif not up and prev in ("hot", "critical") and lvl in ("ok", "warm"):
+            notify("low", "GPU cooled down", summary)
+
+
+def main():
+    h = hwmon()
+    if h is None:
+        print(json.dumps({"text": f"{ICON} n/a", "tooltip": "No amdgpu sensors found", "class": "ok"}, ensure_ascii=False))
+        return 0
+    temps = sensors(h)
+    worst = "ok"
+    lines = []
+    for label, temp, crit in temps:
+        lvl = level(temp, crit)
+        if LEVELS.index(lvl) > LEVELS.index(worst):
+            worst = lvl
+        mark = "" if lvl == "ok" else f"  ({lvl})"
+        lines.append(f"{label:<9}{temp:>4.0f}°C / {crit:.0f}{mark}")
+    main_temp = next((t for l, t, c in temps if l == "junction"), temps[0][1] if temps else None)
+
+    dev = os.path.dirname(os.path.dirname(h))
+    fan, fan_max = read(os.path.join(h, "fan1_input")), read(os.path.join(h, "fan1_max"))
+    power = read(os.path.join(h, "power1_average"), 1e6) or read(os.path.join(h, "power1_input"), 1e6)
+    cap = read(os.path.join(h, "power1_cap"), 1e6)
+    busy = read(os.path.join(dev, "gpu_busy_percent"))
+    if fan is not None:
+        lines.append(f"fan      {fan:.0f} rpm" + (f" / {fan_max:.0f}" if fan_max else ""))
+    if power is not None:
+        lines.append(f"power    {power:.0f} W" + (f" / {cap:.0f}" if cap else ""))
+    if busy is not None:
+        lines.append(f"load     {busy:.0f}%")
+
+    summary = "\n".join(lines)
+    track(worst, summary)
+    text = f"{ICON} {main_temp:.0f}°" if main_temp is not None else f"{ICON} n/a"
+    tooltip = f"<tt>{summary}</tt>"
+    print(json.dumps({"text": text, "tooltip": tooltip, "class": worst}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
