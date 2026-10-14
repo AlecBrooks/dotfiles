@@ -20,7 +20,7 @@ import shutil
 import sys
 
 HOME = os.path.expanduser("~")
-SRC = "/usr/share/icons/breeze-dark"
+SRC = "/usr/share/icons/breeze-dark"   # switched to "breeze" in main() when the palette is light
 OUT = os.path.join(HOME, ".local/share/icons/wallpaper-icons")
 MARKER = ".generated-by-wallpaper-theme"
 THEME_NAME = "wallpaper-icons"
@@ -49,7 +49,13 @@ def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__, file=sys.stderr)
         return 2
-    primary = json.load(open(sys.argv[1], encoding="utf-8"))["colors"]["primary"]["default"]["color"]
+    global SRC
+    colors = json.load(open(sys.argv[1], encoding="utf-8"))["colors"]
+    primary = colors["primary"]["default"]["color"]
+    surface = colors["surface"]["default"]["color"]
+    light = sum(int(surface[i:i + 2], 16) for i in (1, 3, 5)) / 3 > 128
+    base = "breeze" if light else "breeze-dark"
+    SRC = f"/usr/share/icons/{base}"
 
     # Only ever replace a directory we generated ourselves.
     if os.path.exists(OUT) and not os.path.exists(os.path.join(OUT, MARKER)):
@@ -89,7 +95,7 @@ def main() -> int:
         "[Icon Theme]\n"
         "Name=Wallpaper Icons\n"
         "Comment=breeze-dark with the accent recolored from the wallpaper (generated)\n"
-        "Inherits=breeze-dark\n"
+        f"Inherits={base}\n"
         f"Directories={','.join(dirs)}\n\n"
     )
     with open(os.path.join(new, "index.theme"), "w", encoding="utf-8") as fh:
