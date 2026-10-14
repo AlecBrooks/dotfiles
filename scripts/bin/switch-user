@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""switch-user: lock this session and jump to the other login screen, without logging out.
+
+Two Ly login screens run, on tty2 and tty3. From a session on one, this locks the screen with
+hyprlock and switches to the other VT: there you get Ly (log in as someone else) or that
+person's own locked session. Hyprland's Lua API has no VT dispatcher, so the switch is a
+Ctrl+Alt+F<n> key press from a virtual keyboard (/dev/uinput; logind grants it to the active
+session's user). Usage: switch-user [--dry-run]
+"""
+import os
+import subprocess
+import sys
+import time
+
+LOGIN_VTS = [2, 3]
+
+
+def current_vt():
+    vt = os.environ.get("XDG_VTNR")
+    if vt:
+        return int(vt)
+    sid = os.environ.get("XDG_SESSION_ID", "auto")
+    out = subprocess.run(["loginctl", "show-session", sid, "-p", "VTNr", "--value"],
+                         capture_output=True, text=True).stdout.strip()
+    return int(out) if out.isdigit() else LOGIN_VTS[0]
+
+
+def press_vt_key(vt):
+    from evdev import UInput, ecodes as e
+    keys = [e.KEY_LEFTCTRL, e.KEY_LEFTALT, getattr(e, f"KEY_F{vt}")]
+    with UInput({e.EV_KEY: keys}, name="switch-user") as ui:
+        time.sleep(0.3)  # let the compositor pick up the new device
+        for k in keys:
+            ui.write(e.EV_KEY, k, 1)
+            ui.syn()
+        time.sleep(0.05)
+        for k in reversed(keys):
+            ui.write(e.EV_KEY, k, 0)
+            ui.syn()
+        time.sleep(0.1)
+
+
+def main():
+    here = current_vt()
+    target = next((vt for vt in LOGIN_VTS if vt != here), LOGIN_VTS[0])
+    if "--dry-run" in sys.argv:
+        print(f"on tty{here}: would lock and switch to tty{target}")
+        return
+    if subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", "hyprlock"],
+                      stdout=subprocess.DEVNULL).returncode != 0:
+        subprocess.Popen(["hyprlock"], start_new_session=True, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.8)  # lock first, so the session is never left open
+    press_vt_key(target)
+
+
+if __name__ == "__main__":
+    main()
