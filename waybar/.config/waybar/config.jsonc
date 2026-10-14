@@ -331,6 +331,8 @@
         "menu": "on-click",
         "menu-file": "$HOME/.config/waybar/power_menu.xml",
         "menu-actions": {
+            "switchuser": "$HOME/bin/switch-user",
+            "logout": "uwsm stop",
             "shutdown": "systemctl poweroff",
             "reboot": "systemctl reboot",
             "suspend": "systemctl suspend",
