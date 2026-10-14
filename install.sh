@@ -5,6 +5,8 @@ set -Eeuo pipefail
 REPO_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_PACKAGES=true
 INSTALL_AUR=true
+INSTALL_PERSONAL=false
+SETUP_SERVICES=true
 
 STOW_PACKAGES=(
   shell
@@ -20,6 +22,13 @@ STOW_PACKAGES=(
   scripts
   nvim
   fastfetch
+  waybar
+  matugen
+  wallpaper-picker
+)
+
+# Tied to the original owner's accounts (Radicale calendar/contacts); only with --personal.
+PERSONAL_PACKAGES=(
   pim
 )
 
@@ -38,12 +47,32 @@ MANAGED_PATHS=(
   ".config/gtk-4.0"
   ".config/ytjukebox"
   ".config/fastfetch"
+  ".config/waybar"
+  ".config/matugen"
+  ".config/systemd/user/wallpaper-picker-start.service"
+  ".local/bin/wallpaper-picker"
+  ".local/share/wallpaper-picker"
+  ".local/share/applications/wallpaper-picker.desktop"
+  "bin"
+)
+
+PERSONAL_PATHS=(
   ".config/calcurse"
   ".config/vdirsyncer"
   ".config/khard"
   ".config/systemd/user/calcurse-sync.service"
   ".config/systemd/user/calcurse-sync.timer"
-  "bin"
+)
+
+# Real directories that must exist before stowing. Otherwise Stow "folds" a missing parent into a
+# single symlink (e.g. ~/.config/systemd -> the repo) and later writes land inside the repo.
+REAL_DIRS=(
+  ".config"
+  ".config/systemd/user"
+  ".local/bin"
+  ".local/share/applications"
+  ".local/state"
+  ".cache"
 )
 
 usage() {
@@ -56,6 +85,8 @@ Options:
   --stow-only    Skip Pacman and AUR package installation
   --no-packages  Alias for --stow-only
   --no-aur       Install Pacman packages but skip AUR packages
+  --personal     Also link the owner's personal configs (pim: Radicale calendar/contacts)
+  --no-services  Don't enable systemd user units or generate the first theme
   -h, --help     Show this help message
 USAGE
 }
@@ -81,6 +112,12 @@ while (($# > 0)); do
       ;;
     --no-aur)
       INSTALL_AUR=false
+      ;;
+    --personal)
+      INSTALL_PERSONAL=true
+      ;;
+    --no-services)
+      SETUP_SERVICES=false
       ;;
     -h|--help)
       usage
@@ -176,7 +213,10 @@ backup_conflicts() {
   local backup_dir="$HOME/dotfiles-preinstall-backup-$timestamp"
   local moved_any=false
 
-  for relative_path in "${MANAGED_PATHS[@]}"; do
+  local paths=("${MANAGED_PATHS[@]}")
+  [[ "$INSTALL_PERSONAL" == true ]] && paths+=("${PERSONAL_PATHS[@]}")
+
+  for relative_path in "${paths[@]}"; do
     local target="$HOME/$relative_path"
 
     if [[ ! -e "$target" && ! -L "$target" ]]; then
@@ -184,6 +224,12 @@ backup_conflicts() {
     fi
 
     if path_is_managed_by_repo "$target"; then
+      # A hand-made absolute link into the repo: Stow refuses to replace links it didn't make,
+      # so drop it and let Stow recreate the same link.
+      if [[ "$(readlink -- "$target")" == /* ]]; then
+        info "Replacing hand-made link $target"
+        rm -- "$target"
+      fi
       continue
     fi
 
@@ -205,10 +251,15 @@ backup_conflicts() {
 
 stow_dotfiles() {
   command -v stow >/dev/null 2>&1 || die "GNU Stow is not installed."
-  mkdir -p "$HOME/.config"
+  for dir in "${REAL_DIRS[@]}"; do
+    mkdir -p -- "$HOME/$dir"
+  done
+
+  local wanted=("${STOW_PACKAGES[@]}")
+  [[ "$INSTALL_PERSONAL" == true ]] && wanted+=("${PERSONAL_PACKAGES[@]}")
 
   local available_packages=()
-  for package in "${STOW_PACKAGES[@]}"; do
+  for package in "${wanted[@]}"; do
     if [[ -d "$REPO_DIR/$package" ]]; then
       available_packages+=("$package")
     else
@@ -227,6 +278,37 @@ stow_dotfiles() {
     "${available_packages[@]}"
 }
 
+setup_user() {
+  mkdir -p "$HOME/Photos/Screenshots"
+
+  [[ "$SETUP_SERVICES" == true ]] || return 0
+
+  # The theme (colors for Waybar, kitty, hyprlock, GTK, Qt...) is generated per user into
+  # ~/.cache/wallpaper-theme. Make a first one from Hyprland's bundled wallpaper so nothing
+  # starts without its colors; picking a Wallpaper Engine wallpaper later regenerates it.
+  if [[ ! -f "$HOME/.cache/wallpaper-theme/waybar-colors.css" ]]; then
+    if command -v matugen >/dev/null 2>&1 && [[ -f /usr/share/hypr/wall0.png ]]; then
+      info "Generating the first color theme"
+      "$HOME/bin/wallpaper-theme" --image /usr/share/hypr/wall0.png --no-reload --no-restart-apps \
+        || warn "wallpaper-theme failed; run it again after logging in"
+    else
+      warn "matugen or /usr/share/hypr/wall0.png is missing; run ~/bin/wallpaper-theme --image <file> later"
+    fi
+  fi
+
+  if systemctl --user show-environment >/dev/null 2>&1; then
+    info "Enabling systemd user units"
+    systemctl --user daemon-reload
+    systemctl --user enable wallpaper-picker-start.service
+    if [[ "$INSTALL_PERSONAL" == true ]]; then
+      systemctl --user enable calcurse-sync.timer
+    fi
+  else
+    warn "No systemd user session; enable wallpaper-picker-start.service after logging in:"
+    warn "  systemctl --user enable wallpaper-picker-start.service"
+  fi
+}
+
 main() {
   info "Dotfiles repository: $REPO_DIR"
 
@@ -240,10 +322,11 @@ main() {
 
   backup_conflicts
   stow_dotfiles
+  setup_user
 
   if [[ ! -d /usr/share/themes/Gruvbox-Teal-Dark ]]; then
-    warn "Gruvbox-Teal-Dark was not found under /usr/share/themes."
-    warn "GTK 4 theme links will remain broken until that theme is installed."
+    warn "Gruvbox-Teal-Dark was not found under /usr/share/themes (optional: only the"
+    warn "~/.config/gtk-4.0/assets icons link to it; colors come from the generated theme)."
   fi
 
   cat <<'DONE'
@@ -255,14 +338,13 @@ Suggested follow-up:
   1. Start a new shell or run:
        exec bash -l
 
-  2. Create local secrets that are intentionally not tracked:
-       printf '%s\n' 'YOUR_OBS_WEBSOCKET_PASSWORD' > ~/bin/obs-password
-       chmod 600 ~/bin/obs-password
+  2. Log out and back in to Hyprland. Waybar and the wallpaper start from
+     wallpaper-picker-start.service. To use animated wallpapers, sign in to
+     Steam, subscribe to Wallpaper Engine items, then open "Wallpaper Picker".
 
-  3. Review the local ytjukebox visualizer path:
-       ~/.config/ytjukebox/playlist.toml
-
-  4. Restart Hyprland or log out and back in after reviewing the config.
+  3. Optional, per-user and not tracked:
+       ~/bin/obs-password      OBS websocket password (chmod 600)
+       ~/.config/ytjukebox/playlist.toml   visualizer video path
 DONE
 }
 

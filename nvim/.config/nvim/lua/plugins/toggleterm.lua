@@ -10,6 +10,10 @@ return {
       size = 15,
     })
 
+    -- Per-user scratch dir, so two logged-in users don't fight over the same /tmp files
+    local tmp = os.getenv("XDG_RUNTIME_DIR") or "/tmp"
+    local run_out = tmp .. "/nvim_run_out"
+
     -- %s is substituted with the current file's absolute path
     local run_commands = {
       python = "python3 %s",
@@ -18,14 +22,14 @@ return {
       bash = "bash %s",
       javascript = "node %s",
       typescript = "npx ts-node %s",
-      c = "gcc %s -o /tmp/nvim_run_out && /tmp/nvim_run_out",
-      cpp = "g++ %s -o /tmp/nvim_run_out && /tmp/nvim_run_out",
-      rust = "rustc %s -o /tmp/nvim_run_out && /tmp/nvim_run_out",
+      c = "gcc %s -o " .. run_out .. " && " .. run_out,
+      cpp = "g++ %s -o " .. run_out .. " && " .. run_out,
+      rust = "rustc %s -o " .. run_out .. " && " .. run_out,
       go = "go run %s",
       r = "Rscript %s",
     }
 
-    local run_socket = "unix:/tmp/kitty-nvim-run.sock"
+    local run_socket = "unix:" .. tmp .. "/kitty-nvim-run.sock"
 
     local function run_window_alive()
       vim.fn.system({ "kitty", "@", "--to", run_socket, "ls" })

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Wallpaper Picker
+Comment=Assign Wallpaper Engine wallpapers to Hyprland monitors
+Exec=sh -c '"$HOME/.local/bin/wallpaper-picker"'
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Categories=Utility;Settings;
+StartupNotify=true
