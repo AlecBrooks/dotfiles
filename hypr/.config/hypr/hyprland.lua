@@ -302,7 +302,7 @@ hl.bind(
 
 hl.bind(
     mainMod .. " + SHIFT + S",
-    hl.dsp.exec_cmd("grim -g \"$(slurp)\" - | wl-copy")
+    hl.dsp.exec_cmd([[g=$(slurp) && f="$HOME/Photos/Screenshots/$(date +%Y-%m-%d_%H-%M-%S).png" && grim -g "$g" "$f" && wl-copy --type image/png < "$f"]])
 )
 
 --Programs
