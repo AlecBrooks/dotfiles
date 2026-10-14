@@ -58,6 +58,13 @@ THEME_STYLES = [
     ("Muted", "muted", "Nearly monochrome, very calm."),
 ]
 
+# Dark or light backgrounds; read by ~/bin/wallpaper-theme the same way as the style.
+THEME_MODE_FILE = Path.home() / ".config" / "wallpaper-theme" / "mode"
+THEME_MODES = [
+    ("Dark", "dark", "Dark backgrounds, light text (default)."),
+    ("Light", "light", "Light backgrounds, dark text."),
+]
+
 DEFAULT_CONFIG = {
     "fps": 30,
     "scaling": "fill",
@@ -118,6 +125,7 @@ def load_setups() -> dict[str, dict]:
                 setups[str(name)] = {
                     "assignments": {str(k): str(v) for k, v in entry["assignments"].items() if v},
                     "style": str(entry.get("style", "soft")),
+                    "mode": str(entry.get("mode", "dark")),
                 }
     return setups
 
@@ -140,6 +148,19 @@ def load_theme_style() -> str:
 def save_theme_style(style: str) -> None:
     THEME_STYLE_FILE.parent.mkdir(parents=True, exist_ok=True)
     THEME_STYLE_FILE.write_text(style + "\n", encoding="utf-8")
+
+
+def load_theme_mode() -> str:
+    try:
+        value = THEME_MODE_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "dark"
+    return value if value in {key for _, key, _ in THEME_MODES} else "dark"
+
+
+def save_theme_mode(mode: str) -> None:
+    THEME_MODE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    THEME_MODE_FILE.write_text(mode + "\n", encoding="utf-8")
 
 
 def move_to_trash(path: Path) -> tuple[bool, str]:
@@ -651,6 +672,14 @@ class MainWindow(QMainWindow):
         )
         self.style_combo.activated.connect(self.style_changed)
 
+        self.mode_combo = QComboBox()
+        for label, key, tip in THEME_MODES:
+            self.mode_combo.addItem(label, key)
+            self.mode_combo.setItemData(self.mode_combo.count() - 1, tip, Qt.ItemDataRole.ToolTipRole)
+        self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(load_theme_mode())))
+        self.mode_combo.setToolTip("Dark or light backgrounds. Changing it re-themes right away.")
+        self.mode_combo.activated.connect(self.mode_changed)
+
         # Saved setups: pick one to swap both monitors' wallpapers AND the color style in one go.
         self.setup_combo = QComboBox()
         self.setup_combo.setMinimumWidth(170)
@@ -673,6 +702,8 @@ class MainWindow(QMainWindow):
         controls.addWidget(self.delete_setup_button)
         controls.addWidget(QLabel("Style:"))
         controls.addWidget(self.style_combo)
+        controls.addWidget(QLabel("Mode:"))
+        controls.addWidget(self.mode_combo)
         controls.addWidget(self.theme_button)
         outer.addLayout(controls)
 
@@ -971,7 +1002,8 @@ class MainWindow(QMainWindow):
             wallpaper = self.wallpaper_by_id.get(workshop_id)
             parts.append(f"{monitor}: {wallpaper.title if wallpaper else f'{workshop_id} (not installed)'}")
         style = next((label for label, key, _ in THEME_STYLES if key == setup["style"]), setup["style"])
-        return "\n".join(parts + [f"Style: {style}"])
+        mode = next((label for label, key, _ in THEME_MODES if key == setup["mode"]), setup["mode"])
+        return "\n".join(parts + [f"Style: {style}", f"Mode: {mode}"])
 
     def reload_setups(self, select: str | None = None) -> None:
         """Refill the setup list from setups.json (keeps the current choice unless `select` is given)."""
@@ -999,7 +1031,8 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
         ) != QMessageBox.StandardButton.Yes:
             return
-        setups[name] = {"assignments": assignments, "style": str(self.style_combo.currentData())}
+        setups[name] = {"assignments": assignments, "style": str(self.style_combo.currentData()),
+                        "mode": str(self.mode_combo.currentData())}
         save_setups(setups)
         self.reload_setups(select=name)
         self.statusBar().showMessage(f"Saved setup “{name}”.", 5000)
@@ -1024,6 +1057,10 @@ class MainWindow(QMainWindow):
         if index >= 0:
             self.style_combo.setCurrentIndex(index)     # programmatic: does not fire the re-theme
             save_theme_style(setup["style"])            # so the single re-theme in apply_config sees it
+        index = self.mode_combo.findData(setup["mode"])
+        if index >= 0:
+            self.mode_combo.setCurrentIndex(index)
+            save_theme_mode(setup["mode"])
         self.update_monitor_cards()
         self.apply_wallpapers()
         note = f"Switched to “{name}”."
@@ -1051,6 +1088,13 @@ class MainWindow(QMainWindow):
         save_theme_style(str(self.style_combo.currentData()))
         if self.theme_process is not None:
             self._colors_rerun = True  # pick the new style up when the current run ends
+            return
+        self.update_colors()
+
+    def mode_changed(self, _index: int) -> None:
+        save_theme_mode(str(self.mode_combo.currentData()))
+        if self.theme_process is not None:
+            self._colors_rerun = True  # pick the new mode up when the current run ends
             return
         self.update_colors()
 

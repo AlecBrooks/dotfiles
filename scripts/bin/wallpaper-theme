@@ -10,8 +10,9 @@
 #
 # Styles: soft (default) | balanced | vivid | muted -- see wallpaper-theme-palette. The style is
 # taken from --style, else $WALLPAPER_THEME_STYLE, else the word in ~/.config/wallpaper-theme/style.
+# Mode: dark (default) | light, the same way: --mode, $WALLPAPER_THEME_MODE, ~/.config/wallpaper-theme/mode.
 #
-# Usage: wallpaper-theme [--style soft|balanced|vivid|muted] [--monitor DP-3]
+# Usage: wallpaper-theme [--style soft|balanced|vivid|muted] [--mode dark|light] [--monitor DP-3]
 #                        [--image PATH] [--no-reload] [--no-restart-apps] [--dry-run]
 set -euo pipefail
 
@@ -24,7 +25,8 @@ STYLE_FILE="$HOME/.config/wallpaper-theme/style"
 STYLE="${WALLPAPER_THEME_STYLE:-}"
 [[ -z "$STYLE" && -r "$STYLE_FILE" ]] && STYLE="$(tr -d '[:space:]' <"$STYLE_FILE")"
 STYLE="${STYLE:-soft}"
-MODE="${WALLPAPER_THEME_MODE:-dark}"
+MODE_FILE="$HOME/.config/wallpaper-theme/mode"
+MODE="${WALLPAPER_THEME_MODE:-}"
 IMAGE=""
 RELOAD=1
 RESTART_APPS="${WALLPAPER_THEME_RESTART_APPS:-1}"
@@ -39,14 +41,18 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --style)     STYLE="$2"; shift 2 ;;
         --monitor)   MONITOR="$2"; shift 2 ;;
+        --mode)      MODE="$2"; shift 2 ;;
         --image)     IMAGE="$2"; shift 2 ;;
         --no-reload) RELOAD=0; shift ;;
         --no-restart-apps) RESTART_APPS=0; shift ;;
         --dry-run)   DRY=(--dry-run); RELOAD=0; shift ;;
-        -h|--help)   sed -n '2,12p' "$0"; exit 0 ;;
+        -h|--help)   sed -n '2,13p' "$0"; exit 0 ;;
         *) echo "wallpaper-theme: unknown argument: $1" >&2; exit 2 ;;
     esac
 done
+
+[[ -z "$MODE" && -r "$MODE_FILE" ]] && MODE="$(tr -d '[:space:]' <"$MODE_FILE")"
+[[ "$MODE" == light ]] || MODE=dark
 
 mkdir -p "$OUT_DIR" "$(dirname "$LOG")"
 log() { printf '[%s] %s\n' "$(date -Is)" "$*" >>"$LOG"; }

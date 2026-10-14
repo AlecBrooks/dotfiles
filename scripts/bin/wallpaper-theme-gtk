@@ -73,7 +73,7 @@ def main() -> int:
             out = tuple(round(clamp(c) * 255) for c in nr)
         elif chroma < 0.25 and not (170 <= hue <= 230 and chroma > 0.08):            # neutrals / cream text
             t = (l - BASE_BG_L) / (BASE_TEXT_L - BASE_BG_L)
-            nl = clamp(sl + t * (ol - sl), 0.0, min(1.0, ol + 0.06))
+            nl = clamp(sl + t * (ol - sl), max(0.0, min(sl, ol) - 0.06), min(1.0, max(sl, ol) + 0.06))
             ns = ss + clamp(t) * (os_ - ss)
             nr = colorsys.hls_to_rgb(sh, nl, ns)
             out = tuple(round(clamp(c) * 255) for c in nr)
@@ -160,6 +160,16 @@ def main() -> int:
         cur = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"], capture_output=True, text=True, timeout=5).stdout.strip()
         if cur != f"'{THEME}'":
             subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "gtk-theme", THEME], timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    # Light theme: ask portals/libadwaita/browsers for light too. Dark: undo only our own 'prefer-light'.
+    try:
+        scheme = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+                                capture_output=True, text=True, timeout=5).stdout.strip()
+        if sl > 0.5 and scheme != "'prefer-light'":
+            subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", "prefer-light"], timeout=5)
+        elif sl <= 0.5 and scheme == "'prefer-light'":
+            subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", "default"], timeout=5)
     except (OSError, subprocess.SubprocessError):
         pass
     print(f"wallpaper-theme-gtk: theme built at {OUT} ({len(cache)} distinct colors remapped)")

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """wallpaper-theme-kvantum: build the "Wallpaper" Kvantum theme from the wallpaper's colors.
 
-Takes the pristine base theme in ~/.config/matugen/kvantum-base/ (your tuned Gruvbox-derived
+Takes a pristine base theme -- light palettes: the stock KvArc in /usr/share/Kvantum; dark: the one in
+~/.config/matugen/kvantum-base/ (your tuned Gruvbox-derived
 Kvantum theme) and remaps every color by role, so all shapes/opacities are preserved:
 
   * accent blues (hue 185-215, clearly colored)  -> the wallpaper's primary hue/lightness
@@ -56,6 +57,17 @@ def main() -> int:
     colors = json.load(open(sys.argv[1], encoding="utf-8"))["colors"]
     col = lambda name: colors[name]["default"]["color"]
 
+    global BASE_ACCENT_L, BASE_ACCENT_S, BASE_BG_L, BASE_TEXT_L
+    light = hls(col("surface"))[1] > 0.5
+    if light:
+        # A dark base inverted to light turns its light highlights into dark smudges (e.g. KCalc's
+        # keypad); a light base keeps every shape right.
+        base_dir, base_name = "/usr/share/Kvantum/KvArc", "KvArc"
+        BASE_ACCENT_L, BASE_ACCENT_S = 0.60, 0.71   # #5294e2
+        BASE_BG_L, BASE_TEXT_L = 0.965, 0.0         # #f5f6f7 window, #000000 text
+    else:
+        base_dir, base_name = BASE, "Gruvbox"
+
     ph, pl, ps = hls(col("primary"))            # accent target
     sh, sl, ss = hls(col("surface"))            # darkest neutral target
     _, ol, os_ = hls(col("on_surface"))         # lightest neutral target
@@ -72,7 +84,7 @@ def main() -> int:
             return to_hex(colorsys.hls_to_rgb(ph, nl, ns))
         if chroma < 0.25:                                        # neutrals / cream text
             t = (l - BASE_BG_L) / (BASE_TEXT_L - BASE_BG_L)
-            nl = clamp(sl + t * (ol - sl), 0.0, min(1.0, ol + 0.06))
+            nl = clamp(sl + t * (ol - sl), max(0.0, min(sl, ol) - 0.06), min(1.0, max(sl, ol) + 0.06))
             ns = (ss + clamp(t) * (os_ - ss))
             return to_hex(colorsys.hls_to_rgb(sh, nl, ns))
         return hexstr                                            # leave one-offs alone
@@ -80,7 +92,7 @@ def main() -> int:
     hex_re = re.compile(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\b")
     os.makedirs(OUT, exist_ok=True)
     for ext in ("kvconfig", "svg"):
-        text = open(os.path.join(BASE, f"Gruvbox.{ext}"), encoding="utf-8").read()
+        text = open(os.path.join(base_dir, f"{base_name}.{ext}"), encoding="utf-8").read()
         text = hex_re.sub(lambda m: remap(m.group(0)[:7].lower()) + m.group(0)[7:], text)
         if ext == "kvconfig":
             # Kvantum hard-codes a neutral #222222 for PCManFM-Qt's side pane; let it show the
