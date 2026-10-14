@@ -412,6 +412,7 @@ window#waybar {
 #custom-vpn,
 #custom-weather,
 #custom-gpu,
+#custom-notifications,
 #pulseaudio,
 #power-profiles-daemon,
 #temperature,
@@ -631,3 +632,17 @@ tooltip label {
 #custom-gpu.hot { color: @surface_dim; background-color: #fb4934; font-weight: bold; }
 #custom-gpu.critical { color: @surface_dim; background-color: #fb4934; font-weight: bold; animation: gpu-blink 1s steps(2) infinite; }
 @keyframes gpu-blink { to { background-color: @surface_dim; color: #fb4934; } }
+
+/* Notification bell: red while Do Not Disturb is on */
+#custom-notifications {
+    padding: 0 10px;
+    font-size: 15px;
+}
+
+#custom-notifications.dnd-notification,
+#custom-notifications.dnd-none,
+#custom-notifications.dnd-inhibited-notification,
+#custom-notifications.dnd-inhibited-none {
+    color: #fb4934;
+    box-shadow: inset 0 -2px #fb4934;
+}

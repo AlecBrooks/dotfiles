@@ -24,6 +24,7 @@
         "temperature",
         "custom/gpu",
         "clock",
+        "custom/notifications",
         "group/tray-drawer",
         "custom/power"
     ],
@@ -220,6 +221,26 @@
         "blueman": "bluetooth",
         "TelegramDesktop": "$HOME/.local/share/icons/hicolor/16x16/apps/telegram.png"
         }
+    },
+    // Notification bell (swaync): left-click toggles Do Not Disturb, right-click opens the panel
+    "custom/notifications": {
+        "exec": "swaync-client -swb",
+        "return-type": "json",
+        "format": "{icon}",
+        "format-icons": {
+            "notification": "󰂚",
+            "none": "󰂚",
+            "dnd-notification": "󰂛",
+            "dnd-none": "󰂛",
+            "inhibited-notification": "󰂛",
+            "inhibited-none": "󰂛",
+            "dnd-inhibited-notification": "󰂛",
+            "dnd-inhibited-none": "󰂛"
+        },
+        "tooltip-format": "{}  (click: Do Not Disturb, right-click: panel)",
+        "on-click": "swaync-client -d -sw",
+        "on-click-right": "swaync-client -t -sw",
+        "escape": true
     },
     "clock": {
         // "timezone": "America/New_York",
