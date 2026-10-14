@@ -1,13 +1,31 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Login hook (wallpaper-picker-start.service): apply the saved Wallpaper Engine setup, which also
+# re-themes the desktop and (re)starts Waybar. On an account with nothing saved yet (no Steam
+# Workshop wallpapers picked), still make sure the theme files exist and Waybar is running.
+set -uo pipefail
 
+ready=false
 for ((attempt = 1; attempt <= 50; attempt++)); do
-    if "/usr/bin/hyprctl" monitors -j >/dev/null 2>&1; then
-        exec "/home/mythra/.local/bin/wallpaper-picker" --apply
+    if /usr/bin/hyprctl monitors -j >/dev/null 2>&1; then
+        ready=true
+        break
     fi
-
     sleep 0.2
 done
+if [[ "$ready" != true ]]; then
+    echo "Hyprland was not ready after 10 seconds." >&2
+    exit 1
+fi
 
-echo "Hyprland was not ready after 10 seconds." >&2
-exit 1
+if "$HOME/.local/bin/wallpaper-picker" --apply-saved; then
+    exit 0
+fi
+
+echo "No saved wallpaper was applied; starting Waybar without one." >&2
+if [[ ! -f "$HOME/.cache/wallpaper-theme/waybar-colors.css" ]]; then
+    "$HOME/bin/wallpaper-theme" --image /usr/share/hypr/wall0.png --no-reload --no-restart-apps || true
+fi
+if ! pgrep -u "$(id -u)" -x waybar >/dev/null; then
+    mkdir -p "$HOME/.local/state/wallpaper-picker"
+    setsid -f waybar >>"$HOME/.local/state/wallpaper-picker/waybar.log" 2>&1 </dev/null
+fi

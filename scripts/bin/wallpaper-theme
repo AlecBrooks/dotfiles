@@ -191,7 +191,7 @@ fi
 
 if [[ $RELOAD -eq 1 ]]; then
     # kitty re-reads its config (and our include) on SIGUSR1.
-    pkill -USR1 -x kitty 2>/dev/null || true
+    pkill -u "$(id -u)" -USR1 -x kitty 2>/dev/null || true
     # Hyprland re-reads hyprland.lua (borders). Waybar reloads its own CSS.
     hyprctl reload >/dev/null 2>&1 || true
     # hyprlauncher (a daemon) and hyprpolkitagent read hyprtoolkit.conf only at startup; the
@@ -202,11 +202,11 @@ if [[ $RELOAD -eq 1 ]]; then
     # (Gtk::Widget::get_style_context in Cava::onUpdate; hit on 2026-09-23). The Apply path in the
     # picker restarts Waybar itself right after re-theming, so it sets WALLPAPER_THEME_SKIP_WAYBAR=1.
     if [[ "${WALLPAPER_THEME_SKIP_WAYBAR:-0}" != "1" ]] && command -v waybar >/dev/null; then
-        pkill -TERM -x waybar 2>/dev/null || true
-        for _ in $(seq 1 20); do pgrep -x waybar >/dev/null || break; sleep 0.1; done
+        pkill -u "$(id -u)" -TERM -x waybar 2>/dev/null || true
+        for _ in $(seq 1 20); do pgrep -u "$(id -u)" -x waybar >/dev/null || break; sleep 0.1; done
         setsid -f waybar >>"$HOME/.local/state/wallpaper-picker/waybar.log" 2>&1 </dev/null 9>&-
     fi
-    pkill -x hyprlauncher 2>/dev/null || true
+    pkill -u "$(id -u)" -x hyprlauncher 2>/dev/null || true
     systemctl --user try-restart hyprpolkitagent.service 2>/dev/null || true
     log "reloaded kitty + hyprland + waybar + launcher + polkit agent"
     # Qt apps only read their theme at startup: restart the file manager (keeping its folders and

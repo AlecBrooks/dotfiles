@@ -48,7 +48,7 @@ run_file() {
             ;;
 
         c)
-            output="/tmp/${basename_no_ext}-sublime-build"
+            output="${XDG_RUNTIME_DIR:-/tmp}/${basename_no_ext}-sublime-build"
 
             if gcc -Wall -Wextra -std=c17 "$filename" -o "$output"; then
                 "$output"
@@ -61,7 +61,7 @@ run_file() {
             ;;
 
         cpp|cc|cxx|c++)
-            output="/tmp/${basename_no_ext}-sublime-build"
+            output="${XDG_RUNTIME_DIR:-/tmp}/${basename_no_ext}-sublime-build"
 
             if g++ -Wall -Wextra -std=c++20 "$filename" -o "$output"; then
                 "$output"

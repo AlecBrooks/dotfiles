@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply saved Wallpaper Engine wallpapers
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/wallpaper-picker-start
+RemainAfterExit=yes
+TimeoutStartSec=20
+
+[Install]
+WantedBy=graphical-session.target

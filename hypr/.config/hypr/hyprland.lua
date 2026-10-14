@@ -71,10 +71,10 @@ local browser     = "zen-browser"
 local mail     = "proton-mail"
 local calc     = "kcalc"
 -- Focus the app's window if it's already open, otherwise launch it (see ~/bin/focus-or-launch).
-local weather  = "/home/mythra/bin/focus-or-launch kweather kweather"
+local weather  = "~/bin/focus-or-launch kweather kweather"
 local sublime  = "subl -n"   -- always a fresh window (weather still focuses the existing one)
-local obsidian = "/home/mythra/bin/focus-or-launch obsidian obsidian"   -- focus it if open, else start it
-local calendar = "/home/mythra/bin/focus-or-launch '^calcurse$' kitty --class calcurse --title Calendar calcurse"   -- calcurse (Radicale-synced) in its own kitty
+local obsidian = "~/bin/focus-or-launch obsidian obsidian"   -- focus it if open, else start it
+local calendar = "~/bin/focus-or-launch '^calcurse$' kitty --class calcurse --title Calendar calcurse"   -- calcurse (Radicale-synced) in its own kitty
 
 -------------------
 ---- AUTOSTART ----
@@ -86,22 +86,22 @@ hl.on("hyprland.start", function ()
     -- managers (e.g. Ly) don't, and linux-wallpaperengine exits without
     -- XDG_SESSION_TYPE ("window server detection failed").
     hl.exec_cmd(
-        "sh -lc 'dbus-update-activation-environment --systemd XDG_SESSION_TYPE XDG_SESSION_DESKTOP XDG_CURRENT_DESKTOP WAYLAND_DISPLAY; systemctl --user start wallpaper-picker-start >/tmp/linux-wallpaperengine.log 2>&1 &'"
+        [[sh -lc 'dbus-update-activation-environment --systemd XDG_SESSION_TYPE XDG_SESSION_DESKTOP XDG_CURRENT_DESKTOP WAYLAND_DISPLAY; systemctl --user start wallpaper-picker-start >"${XDG_RUNTIME_DIR:-/tmp}/linux-wallpaperengine.log" 2>&1 &']]
     )
 
     -- Discord
     hl.exec_cmd(
-        "sh -lc 'sleep 1; until curl -fsS --max-time 5 https://discord.com/api/v10/gateway >/dev/null; do sleep 2; done; discord --disable-gpu --start-minimized >/tmp/discord.log 2>&1 &'"
+        [[sh -lc 'sleep 1; until curl -fsS --max-time 5 https://discord.com/api/v10/gateway >/dev/null; do sleep 2; done; discord --disable-gpu --start-minimized >"${XDG_RUNTIME_DIR:-/tmp}/discord.log" 2>&1 &']]
     )
 
     -- Steam
     hl.exec_cmd(
-        "sh -lc 'sleep 8; steam -silent >/tmp/steam.log 2>&1 &'"
+        [[sh -lc 'sleep 8; steam -silent >"${XDG_RUNTIME_DIR:-/tmp}/steam.log" 2>&1 &']]
     )
 
     -- Signal
     hl.exec_cmd(
-        "sh -lc 'sleep 9; signal-desktop --start-in-tray >/tmp/signal.log 2>&1 &'"
+        [[sh -lc 'sleep 9; signal-desktop --start-in-tray >"${XDG_RUNTIME_DIR:-/tmp}/signal.log" 2>&1 &']]
     )
 
 end)
@@ -333,14 +333,14 @@ hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }))
 hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }))
 
 -- Switch both monitors as one logical desktop
-hl.bind(mainMod .. " + 1", hl.dsp.exec_cmd("/home/mythra/bin/workspace-pair 1"))
-hl.bind(mainMod .. " + 2", hl.dsp.exec_cmd("/home/mythra/bin/workspace-pair 2"))
-hl.bind(mainMod .. " + 3", hl.dsp.exec_cmd("/home/mythra/bin/workspace-pair 3"))
+hl.bind(mainMod .. " + 1", hl.dsp.exec_cmd("~/bin/workspace-pair 1"))
+hl.bind(mainMod .. " + 2", hl.dsp.exec_cmd("~/bin/workspace-pair 2"))
+hl.bind(mainMod .. " + 3", hl.dsp.exec_cmd("~/bin/workspace-pair 3"))
 
 -- Move the focused window to the same monitor on another logical desktop
-hl.bind(mainMod .. " + SHIFT + 1", hl.dsp.exec_cmd("/home/mythra/bin/move-to-workspace-pair 1"))
-hl.bind(mainMod .. " + SHIFT + 2", hl.dsp.exec_cmd("/home/mythra/bin/move-to-workspace-pair 2"))
-hl.bind(mainMod .. " + SHIFT + 3", hl.dsp.exec_cmd("/home/mythra/bin/move-to-workspace-pair 3"))
+hl.bind(mainMod .. " + SHIFT + 1", hl.dsp.exec_cmd("~/bin/move-to-workspace-pair 1"))
+hl.bind(mainMod .. " + SHIFT + 2", hl.dsp.exec_cmd("~/bin/move-to-workspace-pair 2"))
+hl.bind(mainMod .. " + SHIFT + 3", hl.dsp.exec_cmd("~/bin/move-to-workspace-pair 3"))
 
 -- Move/resize windows with mainMod + LMB/RMB and dragging
 hl.bind(mainMod .. " + mouse:272", hl.dsp.window.drag(),   { mouse = true })

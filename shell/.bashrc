@@ -20,4 +20,4 @@ export PATH="$HOME/.cargo/bin:$PATH"
 export GOPATH="$HOME/.cache/go"  # keep Go's module cache out of ~ (AUR Go builds)
 
 # Created by `pipx` on 2026-07-18 23:39:18
-export PATH="$PATH:/home/mythra/.local/bin"
+export PATH="$PATH:$HOME/.local/bin"

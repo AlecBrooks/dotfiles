@@ -159,30 +159,30 @@
     },
     // Globe: an alert counter from a private script (~/.local/bin, not in this repo).
     "custom/globe": {
-        "exec": "/home/mythra/.local/bin/statusglobe",
+        "exec": "$HOME/.local/bin/statusglobe",
         "return-type": "json",
         "interval": 60,
         "signal": 9,
-        "on-click": "/home/mythra/.local/bin/statusglobe open"
+        "on-click": "$HOME/.local/bin/statusglobe open"
     },
     // Padlock: Tailscale exit node (home server -> Proton VPN). Click toggles; ~/bin/waybar-vpn
     "custom/vpn": {
-        "exec": "/home/mythra/bin/waybar-vpn",
+        "exec": "$HOME/bin/waybar-vpn",
         "return-type": "json",
         "interval": 10,
         "signal": 8,
-        "on-click": "/home/mythra/bin/waybar-vpn toggle"
+        "on-click": "$HOME/bin/waybar-vpn toggle"
     },
     // Current temperature (KWeather's saved location, via Open-Meteo); click opens/focuses KWeather
     "custom/weather": {
-        "exec": "/home/mythra/bin/waybar-weather",
+        "exec": "$HOME/bin/waybar-weather",
         "return-type": "json",
         "interval": 900,
-        "on-click": "/home/mythra/bin/focus-or-launch kweather kweather"
+        "on-click": "$HOME/bin/focus-or-launch kweather kweather"
     },
     // GPU hotspot temp; turns amber/red near the driver's limits and sends a notification when hot. ~/bin/waybar-gpu
     "custom/gpu": {
-        "exec": "/home/mythra/bin/waybar-gpu",
+        "exec": "$HOME/bin/waybar-gpu",
         "return-type": "json",
         "interval": 5
     },
@@ -209,7 +209,7 @@
     },
     // The Air Nomad swirl (regenerated in the theme color by ~/bin/airbender-logo --icon)
     "image#tray-toggle": {
-        "path": "/home/mythra/.cache/wallpaper-theme/tray-icon.png",
+        "exec": "echo \"$HOME/.cache/wallpaper-theme/tray-icon.png\"",
         "size": 20,
         "interval": 60,
         "tooltip": false
