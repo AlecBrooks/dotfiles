@@ -69,6 +69,7 @@ PERSONAL_PATHS=(
 REAL_DIRS=(
   ".config"
   ".config/systemd/user"
+  ".config/sublime-text/Packages"
   ".local/bin"
   ".local/share/applications"
   ".local/state"
@@ -206,6 +207,31 @@ path_is_managed_by_repo() {
   [[ "$resolved" == "$REPO_DIR" || "$resolved" == "$REPO_DIR/"* ]]
 }
 
+# Make each REAL_DIRS entry a real directory. If an earlier run let Stow fold one of its parents
+# into a single link to the repo (e.g. all of ~/.config/sublime-text), remove that link first;
+# Stow then recreates finer-grained links inside the real directory.
+make_real_dirs() {
+  for dir in "${REAL_DIRS[@]}"; do
+    local prefix="" ok=true part
+    local -a parts
+    IFS='/' read -r -a parts <<<"$dir"
+    for part in "${parts[@]}"; do
+      prefix="${prefix:+$prefix/}$part"
+      if [[ -L "$HOME/$prefix" ]]; then
+        if path_is_managed_by_repo "$HOME/$prefix"; then
+          info "Unfolding $HOME/$prefix"
+          rm -- "$HOME/$prefix"
+        else
+          warn "$HOME/$prefix is a symlink outside this repo; not creating $HOME/$dir"
+          ok=false
+          break
+        fi
+      fi
+    done
+    [[ "$ok" == true ]] && mkdir -p -- "$HOME/$dir"
+  done
+}
+
 backup_conflicts() {
   local timestamp
   timestamp="$(date +%Y%m%d-%H%M%S)"
@@ -220,6 +246,13 @@ backup_conflicts() {
     local target="$HOME/$relative_path"
 
     if [[ ! -e "$target" && ! -L "$target" ]]; then
+      continue
+    fi
+
+    # Never "back up" through a link into the repo: that would move the repo's own files.
+    local parent_real
+    parent_real="$(realpath -m -- "$(dirname -- "$target")")"
+    if [[ "$parent_real" == "$REPO_DIR" || "$parent_real" == "$REPO_DIR/"* ]]; then
       continue
     fi
 
@@ -251,9 +284,6 @@ backup_conflicts() {
 
 stow_dotfiles() {
   command -v stow >/dev/null 2>&1 || die "GNU Stow is not installed."
-  for dir in "${REAL_DIRS[@]}"; do
-    mkdir -p -- "$HOME/$dir"
-  done
 
   local wanted=("${STOW_PACKAGES[@]}")
   [[ "$INSTALL_PERSONAL" == true ]] && wanted+=("${PERSONAL_PACKAGES[@]}")
@@ -320,6 +350,7 @@ main() {
     fi
   fi
 
+  make_real_dirs
   backup_conflicts
   stow_dotfiles
   setup_user
