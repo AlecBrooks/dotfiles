@@ -3,6 +3,7 @@
 format = """
 [](color_orange)\
 $os\
+$hostname\
 [](bg:color_yellow fg:color_orange)\
 $directory\
 [](fg:color_yellow bg:color_aqua)\
@@ -82,9 +83,11 @@ style_root = "bg:color_orange fg:color_fg0"
 format = '[ $user]($style)'
 
 [hostname]
+# Which machine this is (tarlava, luthien, ...); it's always the same user, so no user@.
 ssh_only = false
-disabled = true
-format = '[@$hostname ](bg:color_orange fg:color_fg0)'
+disabled = false
+format = '[ $hostname ](bg:color_orange fg:#1d2021)'
+aliases = { "Luthien" = "luthien" }
 
 [directory]
 style = "fg:#1d2021 bg:color_yellow"
