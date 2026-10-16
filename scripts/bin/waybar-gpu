@@ -8,6 +8,7 @@ temp from the driver: warm = crit-10, hot = crit-5, critical = crit-2 (RX 6650 X
 
 Going up to hot or critical sends a desktop notification; dropping back below hot sends one more.
 Last level is kept in ~/.cache/waybar-gpu.state so each change notifies only once.
+Prints empty text (Waybar hides the module) when there are no amdgpu sensors.
 
 Waybar: "custom/gpu": { "exec": "~/bin/waybar-gpu", "return-type": "json", "interval": 5 }
 """
@@ -99,7 +100,7 @@ def track(lvl, summary):
 def main():
     h = hwmon()
     if h is None:
-        print(json.dumps({"text": f"{ICON} n/a", "tooltip": "No amdgpu sensors found", "class": "ok"}, ensure_ascii=False))
+        print(json.dumps({"text": ""}))  # no AMD GPU (e.g. a laptop): empty text hides the module
         return 0
     temps = sensors(h)
     worst = "ok"
