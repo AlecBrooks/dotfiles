@@ -344,6 +344,7 @@ window#waybar {
 #custom-vpn,
 #custom-weather,
 #custom-gpu,
+#battery,
 #pulseaudio,
 #network,
 #power-profiles-daemon,
@@ -413,6 +414,7 @@ window#waybar {
 #custom-vpn,
 #custom-weather,
 #custom-gpu,
+#battery,
 #custom-notifications,
 #pulseaudio,
 #power-profiles-daemon,
@@ -633,6 +635,16 @@ tooltip label {
 #custom-gpu.hot { color: @surface_dim; background-color: #fb4934; font-weight: bold; }
 #custom-gpu.critical { color: @surface_dim; background-color: #fb4934; font-weight: bold; animation: gpu-blink 1s steps(2) infinite; }
 @keyframes gpu-blink { to { background-color: @surface_dim; color: #fb4934; } }
+
+/* Battery (laptops): plain = on battery, accent = charging/plugged, amber = low, flashing red = critical */
+#battery {
+    padding: 0 10px;
+    background-color: @surface_dim;
+    color: @on_surface;
+}
+#battery.charging, #battery.plugged { color: @primary; background-color: @surface_dim; }
+#battery.warning:not(.charging) { color: #fabd2f; }
+#battery.critical:not(.charging) { color: @surface_dim; background-color: #fb4934; font-weight: bold; animation: gpu-blink 1s steps(2) infinite; }
 
 /* Notification bell: red while Do Not Disturb is on */
 #custom-notifications {
