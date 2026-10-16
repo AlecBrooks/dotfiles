@@ -6,6 +6,7 @@ python-obsws
 qt5ct-kde
 qt6ct-kde
 quarto-cli-bin
+seafile-client
 simple-linux-wallpaperengine-gui-git
 yay-bin
 yay-bin-debug
