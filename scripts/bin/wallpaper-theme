@@ -172,7 +172,13 @@ if [[ ${#DRY[@]} -eq 0 && -s "$OUT_DIR/.colors.json" ]]; then
 import os, re, sys
 for arg in sys.argv[1:]:
     conf, scheme = arg.split(":", 1)
-    if not (os.path.exists(conf) and os.path.exists(scheme)):
+    if not os.path.exists(scheme):
+        continue
+    if not os.path.exists(conf):
+        # Fresh machine: without this file Qt apps never pick up Kvantum, the palette or the icons.
+        with open(conf, "w", encoding="utf-8") as fh:
+            fh.write(f"[Appearance]\ncolor_scheme_path={scheme}\ncustom_palette=true\n"
+                     "icon_theme=wallpaper-icons\nstandard_dialogs=default\nstyle=kvantum\n")
         continue
     text = open(conf, encoding="utf-8").read()
     if re.search(rf"^color_scheme_path={re.escape(scheme)}\s*$", text, flags=re.M) and re.search(r"^custom_palette=true\s*$", text, flags=re.M):
