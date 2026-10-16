@@ -67,8 +67,10 @@ if [[ -z "$IMAGE" ]]; then
 import json, os, sys
 cfg, workshop, monitor = sys.argv[1:4]
 try:
-    wid = json.load(open(cfg))["assignments"][monitor]
-except (OSError, KeyError, ValueError) as exc:
+    assignments = json.load(open(cfg))["assignments"]
+    # No wallpaper on this monitor (e.g. a laptop without DP-3): use the first one assigned.
+    wid = assignments[monitor] if monitor in assignments else next(iter(assignments.values()))
+except (OSError, KeyError, ValueError, StopIteration) as exc:
     sys.exit(f"no wallpaper assigned to {monitor} in {cfg} ({exc})")
 proj = os.path.join(workshop, str(wid))
 try:

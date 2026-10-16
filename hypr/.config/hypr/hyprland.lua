@@ -2,62 +2,73 @@
 ---- MONITORS ----
 ------------------
 
-hl.monitor({
-    output = "HDMI-A-1",
-    mode = "1920x1080@60",
-    position = "0x0",
-    scale = 1
-})
+-- The layout follows which screens are plugged in, read from /sys because Hyprland hasn't set up
+-- its outputs yet on the first load:
+--   DP-3 + HDMI-A-1 (the desktop): side by side, workspaces paired across them
+--   anything else (e.g. a laptop): every screen at its native mode, plain workspaces 1-3
+local mainMonitor, secondMonitor = "DP-3", "HDMI-A-1"
 
-hl.monitor({
-    output = "DP-3",
-    mode = "1920x1080@60",
-    position = "1920x0",
-    scale = 1
-})
+local function connected(output)
+    for card = 0, 3 do
+        local f = io.open(string.format("/sys/class/drm/card%d-%s/status", card, output))
+        if f then
+            local status = f:read("l")
+            f:close()
+            if status == "connected" then return true end
+        end
+    end
+    return false
+end
+
+local dualMonitor = connected(mainMonitor) and connected(secondMonitor)
+
+if dualMonitor then
+    hl.monitor({
+        output = secondMonitor,
+        mode = "1920x1080@60",
+        position = "0x0",
+        scale = 1
+    })
+
+    hl.monitor({
+        output = mainMonitor,
+        mode = "1920x1080@60",
+        position = "1920x0",
+        scale = 1
+    })
+else
+    hl.monitor({
+        output = "",
+        mode = "preferred",
+        position = "auto",
+        scale = "auto"
+    })
+end
 
 --------------------------------
 ---- PAIRED WORKSPACES ----------
 --------------------------------
 -- Odd workspaces (1,3,5) live on the main monitor (DP-3), even (2,4,6) on the second (HDMI-A-1).
+-- One screen: just workspaces 1-3.
 
-hl.workspace_rule({
-    workspace = "1",
-    monitor = "DP-3",
-    default = true,
-    persistent = true,
-})
-
-hl.workspace_rule({
-    workspace = "2",
-    monitor = "HDMI-A-1",
-    default = true,
-    persistent = true,
-})
-
-hl.workspace_rule({
-    workspace = "3",
-    monitor = "DP-3",
-    persistent = true,
-})
-
-hl.workspace_rule({
-    workspace = "4",
-    monitor = "HDMI-A-1",
-    persistent = true,
-})
-
-hl.workspace_rule({
-    workspace = "5",
-    monitor = "DP-3",
-    persistent = true,
-})
-
-hl.workspace_rule({
-    workspace = "6",
-    monitor = "HDMI-A-1",
-    persistent = true,
-})
+if dualMonitor then
+    for ws = 1, 6 do
+        hl.workspace_rule({
+            workspace = tostring(ws),
+            monitor = (ws % 2 == 1) and mainMonitor or secondMonitor,
+            default = ws <= 2,
+            persistent = true,
+        })
+    end
+else
+    for ws = 1, 3 do
+        hl.workspace_rule({
+            workspace = tostring(ws),
+            default = ws == 1,
+            persistent = true,
+        })
+    end
+end
 
 ---------------------
 ---- MY PROGRAMS ----
@@ -332,15 +343,17 @@ hl.bind(mainMod .. " + right", hl.dsp.focus({ direction = "right" }))
 hl.bind(mainMod .. " + up",    hl.dsp.focus({ direction = "up" }))
 hl.bind(mainMod .. " + down",  hl.dsp.focus({ direction = "down" }))
 
--- Switch both monitors as one logical desktop
-hl.bind(mainMod .. " + 1", hl.dsp.exec_cmd("~/bin/workspace-pair 1"))
-hl.bind(mainMod .. " + 2", hl.dsp.exec_cmd("~/bin/workspace-pair 2"))
-hl.bind(mainMod .. " + 3", hl.dsp.exec_cmd("~/bin/workspace-pair 3"))
-
--- Move the focused window to the same monitor on another logical desktop
-hl.bind(mainMod .. " + SHIFT + 1", hl.dsp.exec_cmd("~/bin/move-to-workspace-pair 1"))
-hl.bind(mainMod .. " + SHIFT + 2", hl.dsp.exec_cmd("~/bin/move-to-workspace-pair 2"))
-hl.bind(mainMod .. " + SHIFT + 3", hl.dsp.exec_cmd("~/bin/move-to-workspace-pair 3"))
+for i = 1, 3 do
+    if dualMonitor then
+        -- Switch both monitors as one logical desktop
+        hl.bind(mainMod .. " + " .. i, hl.dsp.exec_cmd("~/bin/workspace-pair " .. i))
+        -- Move the focused window to the same monitor on another logical desktop
+        hl.bind(mainMod .. " + SHIFT + " .. i, hl.dsp.exec_cmd("~/bin/move-to-workspace-pair " .. i))
+    else
+        hl.bind(mainMod .. " + " .. i, hl.dsp.focus({ workspace = tostring(i) }))
+        hl.bind(mainMod .. " + SHIFT + " .. i, hl.dsp.window.move({ workspace = tostring(i), follow = false }))
+    end
+end
 
 -- Move/resize windows with mainMod + LMB/RMB and dragging
 hl.bind(mainMod .. " + mouse:272", hl.dsp.window.drag(),   { mouse = true })
