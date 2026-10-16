@@ -85,6 +85,7 @@ python-matplotlib
 python-pandas
 python-pillow
 python-psycopg
+python-pygame
 python-sqlalchemy
 qt5-wayland
 qt6-wayland

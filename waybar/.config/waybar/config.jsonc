@@ -17,6 +17,7 @@
     ],
 
     "modules-right": [
+        "custom/logme",
         "custom/globe",
         "custom/vpn",
         "custom/weather",
@@ -158,6 +159,15 @@
         },
         "tooltip-format": "MPD (connected)",
         "tooltip-format-disconnected": "MPD (disconnected)"
+    },
+    // Body Tracker reminder: "log me" until today has an entry (~/bin/waybar-logme); hidden after.
+    // Click opens (or focuses) the tracker; closing it refreshes this via signal 10.
+    "custom/logme": {
+        "exec": "$HOME/bin/waybar-logme",
+        "return-type": "json",
+        "interval": 300,
+        "signal": 10,
+        "on-click": "$HOME/bin/focus-or-launch '^body-tracker$' $HOME/bin/body-tracker"
     },
     // Globe: an alert counter from a private script (~/.local/bin, not in this repo).
     "custom/globe": {

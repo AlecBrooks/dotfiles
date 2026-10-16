@@ -340,6 +340,7 @@ window#waybar {
 
 /* Modules fill the bar, but also draw the cyan line over themselves */
 #idle_inhibitor,
+#custom-logme,
 #custom-globe,
 #custom-vpn,
 #custom-weather,
@@ -411,6 +412,7 @@ window#waybar {
 #workspaces button,
 #cava,
 #idle_inhibitor,
+#custom-logme,
 #custom-globe,
 #custom-vpn,
 #custom-weather,
@@ -606,6 +608,14 @@ tooltip {
 
 tooltip label {
     color: @on_surface;
+}
+
+/* Body Tracker reminder (custom/logme): accent block while today isn't logged, hidden after */
+#custom-logme {
+    padding: 0 10px;
+    color: @on_primary;
+    background-color: @primary;
+    font-weight: bold;
 }
 
 /* Globe (custom/globe): accent + count = new alerts, dim = nothing new,

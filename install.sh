@@ -343,6 +343,8 @@ setup_user() {
   if [[ -f /usr/share/applications/zen.desktop ]]; then
     "$HOME/bin/zen-start" --install-desktop || warn "could not write the Zen launcher entry"
   fi
+  # Launcher entry for the Body Tracker in ~/Applications (Seafile-synced).
+  "$HOME/bin/body-tracker" --install-desktop || warn "could not write the Body Tracker launcher entry"
 
   [[ "$SETUP_SERVICES" == true ]] || return 0
 

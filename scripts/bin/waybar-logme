@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""waybar-logme: "log me" on the bar until today has an entry in the Body Tracker.
+
+Reads ~/Applications/body-tracker/body_data.json (synced by Seafile, so logging on either machine
+clears it on both). The tracker only stores a day once something was saved for it, so a present
+key means "logged". Prints empty text (module hidden) when today is logged or there's no data file.
+
+Waybar: "custom/logme": { "exec": "$HOME/bin/waybar-logme", "return-type": "json",
+                          "interval": 300, "signal": 10, ... }   (~/bin/body-tracker sends signal 10)
+"""
+import datetime
+import json
+import os
+
+DATA = os.path.expanduser("~/Applications/body-tracker/body_data.json")
+
+
+def main():
+    try:
+        with open(DATA, encoding="utf-8") as f:
+            entries = json.load(f).get("entries", {})
+    except (OSError, ValueError, AttributeError):
+        print(json.dumps({"text": ""}))
+        return
+    today = datetime.date.today().isoformat()
+    if entries.get(today):
+        print(json.dumps({"text": ""}))
+    else:
+        print(json.dumps({"text": "log me", "class": "due",
+                          "tooltip": f"No Body Tracker entry for {today} yet.\nClick to log the day."}))
+
+
+if __name__ == "__main__":
+    main()
