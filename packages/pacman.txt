@@ -33,6 +33,7 @@ gnome-keyring
 grim
 grub
 gst-plugin-pipewire
+gvfs
 helix
 htop
 hyprland
