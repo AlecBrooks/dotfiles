@@ -339,6 +339,11 @@ stow_dotfiles() {
 setup_user() {
   mkdir -p "$HOME/Photos/Screenshots"
 
+  # Launcher entry for Zen that starts on the stack start page (per user, see ~/bin/zen-start).
+  if [[ -f /usr/share/applications/zen.desktop ]]; then
+    "$HOME/bin/zen-start" --install-desktop || warn "could not write the Zen launcher entry"
+  fi
+
   [[ "$SETUP_SERVICES" == true ]] || return 0
 
   # The theme (colors for Waybar, kitty, hyprlock, GTK, Qt...) is generated per user into

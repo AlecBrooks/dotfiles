@@ -78,7 +78,7 @@ end
 local terminal    = "kitty"
 local fileManager = "pcmanfm-qt"
 local menu        = "hyprlauncher"
-local browser     = "zen-browser"
+local browser     = "~/bin/zen-start"   -- fresh start opens the stack start page
 local mail     = "proton-mail"
 local calc     = "kcalc"
 -- Focus the app's window if it's already open, otherwise launch it (see ~/bin/focus-or-launch).

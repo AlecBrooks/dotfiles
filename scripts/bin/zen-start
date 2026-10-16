@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# zen-start: open Zen. A fresh start with nothing to open lands on the "stack" start page
+# (~/dotfiles/startpage, local copy so it has the wallpaper colors). Zen 1.2x throws away its
+# homepage at startup (it treats the first tab as empty and replaces it), so the page is passed
+# as a URL instead. Already running, or given a link/file: plain Zen.
+#
+#   zen-start [args...]          what Alt+B and the launcher entry run
+#   zen-start --install-desktop  write ~/.local/share/applications/zen.desktop pointing here
+#                                (per user: a .desktop Exec can't expand $HOME, and ~/bin is not on
+#                                the session PATH). install.sh runs this.
+set -euo pipefail
+
+page="$HOME/dotfiles/startpage/index.html"
+system_entry=/usr/share/applications/zen.desktop
+
+if [[ "${1:-}" == --install-desktop ]]; then
+    [[ -f "$system_entry" ]] || { echo "zen-start: $system_entry not found (Zen not installed?)" >&2; exit 1; }
+    mime="$(grep -m1 '^MimeType=' "$system_entry" || true)"
+    mkdir -p "$HOME/.local/share/applications"
+    cat >"$HOME/.local/share/applications/zen.desktop" <<EOF
+[Desktop Entry]
+Name=Zen Browser
+GenericName=Web Browser
+Comment=Zen, starting on the stack start page (written by ~/bin/zen-start --install-desktop)
+Exec=$HOME/bin/zen-start %u
+Icon=zen-browser
+Type=Application
+$mime
+StartupWMClass=zen
+Categories=Network;WebBrowser;
+StartupNotify=true
+Terminal=false
+Keywords=Internet;WWW;Browser;Web;Explorer;
+Actions=new-window;new-private-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=/opt/zen-browser-bin/zen-bin --new-window %u
+
+[Desktop Action new-private-window]
+Name=New Private Window
+Exec=/opt/zen-browser-bin/zen-bin --private-window %u
+EOF
+    echo "zen-start: wrote $HOME/.local/share/applications/zen.desktop"
+    exit 0
+fi
+
+if [[ $# -eq 0 && -f "$page" ]] && ! pgrep -u "$(id -u)" -x zen-bin >/dev/null; then
+    exec zen-browser "file://$page"
+fi
+exec zen-browser "$@"
