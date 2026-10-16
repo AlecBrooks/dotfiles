@@ -168,8 +168,36 @@ install_native_packages() {
     return
   fi
 
-  info "Installing ${#packages[@]} native packages"
-  sudo pacman -S --needed "${packages[@]}"
+  # One package from a repo this machine hasn't enabled (steam needs [multilib], sublime-text
+  # Sublime HQ's own repo) makes pacman abort the whole install, so leave those out and say why.
+  local -A in_repos=()
+  local name
+  while IFS= read -r name; do
+    in_repos[$name]=1
+  done < <(pacman -Slq)
+
+  local available=() missing=()
+  for name in "${packages[@]}"; do
+    # Groups and virtual packages aren't in -Slq; ask pacman whether it can resolve them.
+    if [[ -n "${in_repos[$name]:-}" ]] || pacman -Sp --print-format %n "$name" >/dev/null 2>&1; then
+      available+=("$name")
+    else
+      missing+=("$name")
+    fi
+  done
+
+  for name in "${missing[@]}"; do
+    case "$name" in
+      steam|lib32-*) warn "Skipping $name: enable [multilib] in /etc/pacman.conf, then rerun" ;;
+      sublime-text)  warn "Skipping $name: add Sublime HQ's repo (sublimetext.com/docs/linux_repositories.html), then rerun" ;;
+      *)             warn "Skipping $name: not in any enabled repository" ;;
+    esac
+  done
+
+  ((${#available[@]} > 0)) || return 0
+
+  info "Installing ${#available[@]} native packages"
+  sudo pacman -S --needed "${available[@]}"
 }
 
 install_aur_packages() {
