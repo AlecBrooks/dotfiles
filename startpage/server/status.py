@@ -4,8 +4,9 @@
 Browsers can only probe HTTP, so game servers are checked here instead:
   - Project Zomboid: Steam A2S_INFO query on its UDP game port
   - Minecraft: server list ping (players / max / version)
-GET /  ->  JSON  {"vaultwarden": {...}, "pz": {...}, "minecraft": {...}}   (CORS open, LAN only)
-Also HTTP services whose CORP header stops browsers from probing them (Vaultwarden).
+GET /  ->  JSON  {"vaultwarden": {...}, "pz": {...}, "minecraft": {...}, "tarlava": {...}, ...}
+(CORS open, LAN only). Also HTTP services whose CORP header stops browsers from probing them
+(Vaultwarden), and the machines' SSH servers (up = the "SSH-2.0-..." greeting arrives; no login).
 
 No Docker socket, no credentials, nothing it can change: it only knocks on ports.
 Runs in a python:3.13-alpine container with host networking on the Unraid box.
@@ -14,6 +15,7 @@ import json
 import socket
 import struct
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = "192.168.0.10"
@@ -24,6 +26,13 @@ GAMES = {
 # HTTP services the browser cannot probe (they send cross-origin-resource-policy: same-origin)
 SERVICES = {
     "vaultwarden": "http://127.0.0.1:8097/alive",
+}
+# Machines on the start page: SSH greets before any login, so a banner means the machine is up.
+# Tailscale addresses, so a machine that's away from home still counts.
+MACHINES = {
+    "tarlava": ("100.87.124.84", 22),    # desktop
+    "luthien": ("100.93.149.98", 22),    # laptop
+    "unraid": ("192.168.0.10", 22),      # this box (its sshd listens on the LAN address only)
 }
 TIMEOUT = 2.0
 LISTEN = ("0.0.0.0", 8091)
@@ -124,11 +133,25 @@ def http_check(url):
         return {"state": "offline"}
 
 
+def ssh_check(host, port):
+    try:
+        with socket.create_connection((host, port), timeout=TIMEOUT) as s:
+            s.settimeout(TIMEOUT)
+            return {"state": "online" if s.recv(64).startswith(b"SSH-") else "offline"}
+    except OSError:
+        return {"state": "offline"}
+
+
 def status():
-    out = {key: http_check(url) for key, url in SERVICES.items()}
+    # In parallel: a machine that's off would otherwise add TIMEOUT to every page load.
+    jobs = {key: (http_check, (url,)) for key, url in SERVICES.items()}
     for key, g in GAMES.items():
-        out[key] = a2s_info(HOST, g["port"]) if g["kind"] == "a2s" else mc_ping(HOST, g["port"])
-    return out
+        jobs[key] = (a2s_info if g["kind"] == "a2s" else mc_ping, (HOST, g["port"]))
+    for key, (host, port) in MACHINES.items():
+        jobs[key] = (ssh_check, (host, port))
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = {key: pool.submit(fn, *args) for key, (fn, args) in jobs.items()}
+        return {key: f.result() for key, f in futures.items()}
 
 
 class Handler(BaseHTTPRequestHandler):

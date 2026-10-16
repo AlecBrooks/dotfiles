@@ -30,6 +30,13 @@ const GROUPS = [
     { name: "Proxy Manager",icon: "", url: "http://192.168.0.10:81",          sub: "nginx proxy manager", check: true },
     { name: "Pi-hole",      icon: "", url: "http://192.168.0.50/admin",       sub: "192.168.0.50", check: true },
   ]},
+  // Machines: the link opens a kitty with ssh (kitty-open.desktop handles ssh://). Dots come from
+  // stack-status, which checks each machine's SSH greeting over Tailscale.
+  { name: "Machines", items: [
+    { name: "tarlava",      icon: "\uf108", url: "ssh://tarlava",                  sub: "desktop, ssh", helper: "tarlava" },
+    { name: "luthien",      icon: "\uf109", url: "ssh://luthien",                  sub: "laptop, ssh",  helper: "luthien" },
+    { name: "Unraid",       icon: "\uf233", url: "ssh://unraid",                   sub: "server, ssh",  helper: "unraid" },
+  ]},
   { name: "Games", items: [
     { name: "Project Zomboid", icon: "\uf188", url: "http://192.168.0.10:8088/Docker", sub: "unraid docker", game: "pz" },
     { name: "Minecraft",    icon: "\uf1b2", url: "https://192.168.0.10:8443",       sub: "crafty panel", game: "minecraft" },
