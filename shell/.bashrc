@@ -18,6 +18,7 @@ eval "$(starship init bash)"
 export PATH="$HOME/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
 export GOPATH="$HOME/.cache/go"  # keep Go's module cache out of ~ (AUR Go builds)
+export SCIKIT_LEARN_DATA="$HOME/.cache/scikit_learn_data"  # scikit-learn datasets (class notebooks), not ~/scikit_learn_data
 
 # Created by `pipx` on 2026-07-18 23:39:18
 export PATH="$PATH:$HOME/.local/bin"
