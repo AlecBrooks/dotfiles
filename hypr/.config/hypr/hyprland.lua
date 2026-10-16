@@ -129,6 +129,8 @@ end)
 hl.env("XCURSOR_SIZE", "24")
 hl.env("HYPRCURSOR_SIZE", "24")
 hl.env("QT_QPA_PLATFORMTHEME", "qt5ct:qt6ct")
+-- scikit-learn dataset cache (class notebooks) in ~/.cache, not ~/scikit_learn_data
+hl.env("SCIKIT_LEARN_DATA", os.getenv("HOME") .. "/.cache/scikit_learn_data")
 
 -----------------------
 ---- LOOK AND FEEL ----
