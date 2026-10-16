@@ -115,6 +115,11 @@ hl.on("hyprland.start", function ()
         [[sh -lc 'sleep 9; signal-desktop --start-in-tray >"${XDG_RUNTIME_DIR:-/tmp}/signal.log" 2>&1 &']]
     )
 
+    -- Seafile: only once this user has set the client up, so a fresh account doesn't get its wizard
+    hl.exec_cmd(
+        [[sh -lc 'command -v seafile-applet >/dev/null && [ -f "$HOME/.ccnet/seafile.ini" ] && { seafile-applet >"${XDG_RUNTIME_DIR:-/tmp}/seafile.log" 2>&1 & }']]
+    )
+
 end)
 
 -------------------------------
