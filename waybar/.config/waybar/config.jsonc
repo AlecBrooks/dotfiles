@@ -21,6 +21,7 @@
         "custom/vpn",
         "custom/weather",
         "pulseaudio",
+        "bluetooth",
         "temperature",
         "custom/gpu",
         "battery",
@@ -175,6 +176,20 @@
         "on-click": "$HOME/bin/waybar-vpn toggle"
     },
     // Current temperature (KWeather's saved location, via Open-Meteo); click opens/focuses KWeather
+    // Bluetooth: dim = off, plain = on, accent + count = devices connected; hidden with no adapter.
+    // Click opens bluetui (pair/connect) in its own kitty.
+    "bluetooth": {
+        "format": "󰂯",
+        "format-off": "󰂲",
+        "format-disabled": "󰂲",
+        "format-connected": "󰂱 {num_connections}",
+        "format-no-controller": "",
+        "tooltip-format": "{controller_alias}: {status}",
+        "tooltip-format-connected": "{controller_alias}: {num_connections} connected\n\n{device_enumerate}",
+        "tooltip-format-enumerate-connected": "{device_alias}",
+        "tooltip-format-enumerate-connected-battery": "{device_alias}  {device_battery_percentage}%",
+        "on-click": "$HOME/bin/focus-or-launch '^bluetui$' kitty --class bluetui --title Bluetooth bluetui"
+    },
     "custom/weather": {
         "exec": "$HOME/bin/waybar-weather",
         "return-type": "json",

@@ -346,6 +346,7 @@ window#waybar {
 #custom-gpu,
 #battery,
 #pulseaudio,
+#bluetooth,
 #network,
 #power-profiles-daemon,
 #cpu,
@@ -417,6 +418,7 @@ window#waybar {
 #battery,
 #custom-notifications,
 #pulseaudio,
+#bluetooth,
 #power-profiles-daemon,
 #temperature,
 #clock,
@@ -635,6 +637,15 @@ tooltip label {
 #custom-gpu.hot { color: @surface_dim; background-color: #fb4934; font-weight: bold; }
 #custom-gpu.critical { color: @surface_dim; background-color: #fb4934; font-weight: bold; animation: gpu-blink 1s steps(2) infinite; }
 @keyframes gpu-blink { to { background-color: @surface_dim; color: #fb4934; } }
+
+/* Bluetooth: dim = off, plain = on, accent = something connected */
+#bluetooth {
+    padding: 0 10px;
+    background-color: @surface_dim;
+    color: @on_surface;
+}
+#bluetooth.off, #bluetooth.disabled { color: @on_surface_variant; }
+#bluetooth.connected { color: @primary; }
 
 /* Battery (laptops): plain = on battery, accent = charging/plugged, amber = low, flashing red = critical */
 #battery {

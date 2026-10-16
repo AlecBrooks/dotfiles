@@ -3,6 +3,7 @@ amd-ucode
 base
 base-devel
 bat
+bluetui
 bluez
 bluez-utils
 breeze
