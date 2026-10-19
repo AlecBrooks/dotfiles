@@ -14,6 +14,9 @@ scripts/bin/obs-password
 # Passphrase helper
 scripts/bin/pass
 
+# Journal script (machine-local)
+scripts/bin/obsidian-journal.sh
+
 # Python
 **/__pycache__/
 **/*.pyc
