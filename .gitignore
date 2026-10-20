@@ -16,6 +16,7 @@ scripts/bin/pass
 
 # Journal script (machine-local)
 scripts/bin/obsidian-journal.sh
+scripts/bin/obsidian-garden.sh
 
 # Python
 **/__pycache__/
