@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# git-web: open the current repo's origin in the browser (lazygit Ctrl+O runs this), in its own
+# new Zen window floating over the current desktop (never a tab in a Zen already open elsewhere).
+# Alt+X closes it.
+# Forgejo ssh remotes become their git.abrooks.dev page; GitHub ssh/https remotes their github.com page.
+set -euo pipefail
+
+url="$(git remote get-url origin 2>/dev/null)" || { echo "git-web: no origin remote (publish with P first)" >&2; exit 1; }
+url="$(sed -E \
+    -e 's#^ssh://git@192\.168\.0\.10:2223/#https://git.abrooks.dev/#' \
+    -e 's#^git@github\.com:#https://github.com/#' \
+    -e 's#\.git$##' <<<"$url")"
+echo "$url"
+
+before="$(hyprctl clients -j | jq -c '[.[].address]')"
+setsid -f zen-browser --new-window "$url" >/dev/null 2>&1 </dev/null
+
+# wait for the new window (it takes focus), then float it over the whole usable screen
+for _ in $(seq 50); do
+    new="$(hyprctl clients -j | jq -r --argjson b "$before" \
+        'map(select(.class == "zen" and (.address as $a | $b | index($a) | not))) | .[0].address // empty')"
+    [[ -n "$new" ]] && break
+    sleep 0.1
+done
+[[ -n "${new:-}" && "$(hyprctl activewindow -j | jq -r .address)" == "$new" ]] || exit 0
+read -r w h < <(hyprctl monitors -j | jq -r '.[] | select(.focused) | "\(.width - .reserved[0] - .reserved[2] - 44) \(.height - .reserved[1] - .reserved[3] - 44)"')
+hyprctl dispatch 'hl.dsp.window.float({ action = "enable" })' >/dev/null
+hyprctl dispatch "hl.dsp.window.resize({ x = $w, y = $h, relative = false })" >/dev/null
+hyprctl dispatch 'hl.dsp.window.center()' >/dev/null

@@ -5,6 +5,7 @@
 	],
 	"installed_packages":
 	[
+		"AdvancedNewFile",
 		"gruvbox",
 		"Package Control",
 		"Quarto",

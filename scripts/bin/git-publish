@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# git-publish: push the current branch. A repo with no origin yet gets one pointing at a
+# private Forgejo repo named after the repo folder; Forgejo creates it on that first push
+# (push-to-create). Lazygit's P runs this.
+set -euo pipefail
+
+base="${GIT_PUBLISH_BASE:-ssh://git@192.168.0.10:2223/alec}"
+
+if ! git remote get-url origin >/dev/null 2>&1; then
+    name="$(basename "$(git rev-parse --show-toplevel)")"
+    git remote add origin "$base/$name.git"
+    echo "origin -> $base/$name.git"
+fi
+
+if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+    git push
+else
+    git push -u origin "$(git branch --show-current)"
+fi

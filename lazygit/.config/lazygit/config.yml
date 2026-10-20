@@ -1,6 +1,20 @@
+keybinding:
+  universal:
+    copyToClipboard: '<disabled>'   # frees Ctrl+O for the open-in-browser custom command
 customCommands:
   - key: '<c-g>'
     context: 'global'
     command: 'subl -n .'
     description: 'Open repository in Sublime Text'
     output: none
+  - key: 'P'
+    context: 'global'
+    command: '"$HOME/bin/git-publish"'
+    description: 'Publish: push, creating the Forgejo repo on first push'
+    loadingText: 'Publishing'
+    output: log
+  - key: '<c-o>'
+    context: 'global'
+    command: '"$HOME/bin/git-web"'
+    description: 'Open the repo on Forgejo / GitHub in the browser'
+    output: log

@@ -1,0 +1,4 @@
+{
+	// show new files and folders in the sidebar right away
+	"auto_refresh_sidebar": true,
+}

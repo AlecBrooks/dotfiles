@@ -4,7 +4,7 @@
 # homepage at startup (it treats the first tab as empty and replaces it), so the page is passed
 # as a URL instead. Already running, or given a link/file: plain Zen.
 #
-#   zen-start [args...]          what Alt+B and the launcher entry run
+#   zen-start [args...]          what the launcher entry runs
 #   zen-start --install-desktop  write ~/.local/share/applications/zen.desktop pointing here
 #                                (per user: a .desktop Exec can't expand $HOME, and ~/bin is not on
 #                                the session PATH). install.sh runs this.

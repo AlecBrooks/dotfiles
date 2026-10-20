@@ -2,3 +2,16 @@
 on = "<C-g>"
 run = 'shell --orphan -- kitty --title LazyGit --directory "$PWD" lazygit'
 desc = "Open LazyGit in current directory"
+
+# Keyboard system: Hyprland's Win+N sends Ctrl+Alt+N here (same key as Sublime's new-file box).
+# Type a name to make a file; end it with / to make a folder.
+[[mgr.prepend_keymap]]
+on = "<C-A-n>"
+run = "create"
+desc = "Create a file or folder (Win+N)"
+
+# Win+D sends Ctrl+Alt+D here: move the selection to the trash, after a confirm prompt.
+[[mgr.prepend_keymap]]
+on = "<C-A-d>"
+run = "remove"
+desc = "Trash the selection, with a confirm (Win+D)"

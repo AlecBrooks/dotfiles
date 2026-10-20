@@ -1,0 +1,6 @@
+[
+	// Ctrl+Q closes the current file (Alt+X closes the window in Hyprland)
+	{ "keys": ["ctrl+q"], "command": "close" },
+	// AdvancedNewFile path box (its own Win+Alt+N is taken by Hyprland); Win+N sends this
+	{ "keys": ["ctrl+alt+n"], "command": "advanced_new_file_new" },
+]

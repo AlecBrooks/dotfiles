@@ -1,0 +1,7 @@
+# Enter opens text files in Sublime instead of a terminal editor. nvim is still in the
+# "Open with" list (O).
+[opener]
+edit = [
+	{ run = "subl %s",           desc = "Sublime", for = "unix", orphan = true },
+	{ run = "${EDITOR:-vi} %s",  desc = "$EDITOR", for = "unix", block = true },
+]

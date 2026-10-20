@@ -318,30 +318,162 @@ hl.bind(
     hl.dsp.window.move({ direction = "down" })
 )
 
+-- Resize the focused window with mainMod + CTRL + arrows (hold to keep going)
+hl.bind(mainMod .. " + CTRL + left",  hl.dsp.window.resize({ x = -40, y = 0,   relative = true }), { repeating = true })
+hl.bind(mainMod .. " + CTRL + right", hl.dsp.window.resize({ x = 40,  y = 0,   relative = true }), { repeating = true })
+hl.bind(mainMod .. " + CTRL + up",    hl.dsp.window.resize({ x = 0,   y = -40, relative = true }), { repeating = true })
+hl.bind(mainMod .. " + CTRL + down",  hl.dsp.window.resize({ x = 0,   y = 40,  relative = true }), { repeating = true })
+
 hl.bind(
     mainMod .. " + SHIFT + S",
     hl.dsp.exec_cmd([[g=$(slurp) && f="$HOME/Photos/Screenshots/$(date +%Y-%m-%d_%H-%M-%S).png" && grim -g "$g" "$f" && wl-copy --type image/png < "$f"]])
 )
 
---Programs
+-- Keyboard system (Obsidian: notes/Keyboard system): Alt = the desktop, Win = inside the
+-- focused app, Ctrl = the app's own keys (never bound here). Shift = move, Ctrl = resize.
+-- X close, D delete, N new, S search, B bar, on both sides.
 hl.bind(mainMod .. " + RETURN", hl.dsp.exec_cmd(terminal))
-hl.bind(mainMod .. " + B", hl.dsp.exec_cmd(browser))
-hl.bind(mainMod .. " + M", hl.dsp.exec_cmd(mail))
-hl.bind(mainMod .. " + C", hl.dsp.exec_cmd(calc))
-hl.bind(mainMod .. " + W", hl.dsp.exec_cmd(weather))
-hl.bind(mainMod .. " + S", hl.dsp.exec_cmd(sublime))
-hl.bind(mainMod .. " + O", hl.dsp.exec_cmd(obsidian))
-hl.bind(mainMod .. " + A", hl.dsp.exec_cmd(calendar))
+hl.bind(mainMod .. " + F", hl.dsp.exec_cmd(fileManager))
+hl.bind(mainMod .. " + S", hl.dsp.exec_cmd(menu))
+
+-- Alt+N: another copy of the focused program (apps that keep one window just get focused)
+local newCopy = {
+    kitty          = terminal,
+    zen            = "zen-browser --new-window",
+    sublime_text   = sublime,
+    ["pcmanfm-qt"] = fileManager,
+}
+hl.bind(mainMod .. " + N", function()
+    local w = hl.get_active_window()
+    local cmd = w and newCopy[w.class]
+    if cmd then hl.dispatch(hl.dsp.exec_cmd(cmd)) end
+end)
+
+-- Windows a Sublime build opens (a pygame window, a plot...) float over the whole IDE,
+-- full size, instead of re-tiling it. ~/bin/sublime-native-run marks build processes with
+-- SUBLIME_BUILD_WORKER=1, which their windows' processes inherit.
+hl.on("window.open", function(w)
+    local f = w and w.pid and io.open("/proc/" .. w.pid .. "/environ", "rb")
+    if not f then return end
+    local env = f:read("a") or ""
+    f:close()
+    if env:find("SUBLIME_BUILD_WORKER=1", 1, true) then
+        local sel = "pid:" .. w.pid
+        hl.dispatch(hl.dsp.window.float({ action = "enable", window = sel }))
+        -- fill the usable screen like a tiled window would (bar reserved space + 22px gaps)
+        local m = w.monitor or hl.get_active_monitor()
+        if m then
+            local r = type(m.reserved) == "table" and m.reserved or {}
+            local l, t = r[1] or r.left or 0, r[2] or r.top or 0
+            local rr, b = r[3] or r.right or 0, r[4] or r.bottom or 0
+            hl.dispatch(hl.dsp.window.resize({ x = m.width - l - rr - 44, y = m.height - t - b - 44,
+                relative = false, window = sel }))
+        end
+        hl.dispatch(hl.dsp.window.center({ window = sel }))
+    end
+end)
+
+-- Win layer: each action is sent to the focused app as that app's own shortcut
+-- ({ mods, key }; false = the app has no such action). Unknown apps use default.
+local appKeys = {
+    default = {
+        close = false,   -- Win+X never closes an app it doesn't know; add a row instead
+        new = { "CTRL", "N" }, search = { "CTRL", "F" }, bar = false,
+        prev = { "CTRL", "Prior" }, next = { "CTRL", "Next" }, moveprev = false, movenext = false,
+        back = { "ALT", "Left" }, forward = { "ALT", "Right" }, reopen = { "CTRL SHIFT", "T" },
+        delete = false, tabmod = false,
+    },
+    zen = {
+        close = { "CTRL", "Q" },   -- Ctrl+W is moved to Q in zen-keyboard-shortcuts.json
+        new = { "CTRL", "T" }, search = { "CTRL", "K" }, bar = { "CTRL", "S" },
+        moveprev = { "CTRL SHIFT", "Prior" }, movenext = { "CTRL SHIFT", "Next" },
+        tabmod = "ALT",
+    },
+    sublime_text = {
+        new = { "CTRL ALT", "N" },   -- AdvancedNewFile path box (User keymap)
+        search = { "CTRL", "P" }, bar = { "CTRL", "0" },
+        back = { "ALT", "minus" }, forward = { "ALT SHIFT", "minus" },
+        tabmod = "ALT",
+    },
+    ["md.obsidian.Obsidian"] = {
+        search = { "CTRL", "O" },
+        prev = { "CTRL SHIFT", "Tab" }, next = { "CTRL", "Tab" },
+        back = { "CTRL ALT", "Left" }, forward = { "CTRL ALT", "Right" },
+        tabmod = "CTRL",
+    },
+    -- kitty tabs/windows aren't used, so only search does anything here
+    kitty = {
+        close = false, new = false, search = { "CTRL", "R" },
+        prev = false, next = false, moveprev = false, movenext = false,
+        back = false, forward = false, reopen = false,
+    },
+    -- yazi runs inside kitty; picked by its window title ("Yazi: <dir>"), anything it lacks
+    -- falls through to kitty
+    yazi = {
+        new = { "CTRL ALT", "N" },     -- create (yazi keymap.toml)
+        delete = { "CTRL ALT", "D" },  -- trash the selection, asks first
+    },
+    ["pcmanfm-qt"] = {
+        close = false,   -- Ctrl+W on the last tab closes the window
+        new = { "CTRL", "T" }, bar = { "", "F9" },
+        prev = { "CTRL SHIFT", "Tab" }, next = { "CTRL", "Tab" }, reopen = false,
+    },
+}
+local function appKey(action)
+    local w = hl.get_active_window()
+    if not w then return nil end
+    local tables = { appKeys[w.class] or {}, appKeys.default }
+    if w.class == "kitty" and (w.title or ""):match("^Yazi") then
+        table.insert(tables, 1, appKeys.yazi)
+    end
+    for _, keys in ipairs(tables) do
+        if keys[action] ~= nil then return keys[action] end
+    end
+    return nil
+end
+local function sendApp(action)
+    return function()
+        local k = appKey(action)
+        if k then hl.dispatch(hl.dsp.send_shortcut({ mods = k[1], key = k[2] })) end
+    end
+end
+hl.bind("SUPER + X",             sendApp("close"))
+hl.bind("SUPER + SHIFT + X",     sendApp("reopen"))
+hl.bind("SUPER + D",             sendApp("delete"))
+hl.bind("SUPER + N",             sendApp("new"))
+hl.bind("SUPER + S",             sendApp("search"))
+hl.bind("SUPER + B",             sendApp("bar"))
+hl.bind("SUPER + left",          sendApp("prev"))
+hl.bind("SUPER + right",         sendApp("next"))
+hl.bind("SUPER + SHIFT + left",  sendApp("moveprev"))
+hl.bind("SUPER + SHIFT + right", sendApp("movenext"))
+hl.bind("SUPER + bracketleft",   sendApp("back"))
+hl.bind("SUPER + bracketright",  sendApp("forward"))
+for i = 1, 9 do
+    hl.bind("SUPER + " .. i, function()
+        local mod = appKey("tabmod")
+        if mod then hl.dispatch(hl.dsp.send_shortcut({ mods = mod, key = tostring(i) })) end
+    end)
+end
 
 
 local closeWindowBind = hl.bind(mainMod .. " + X", hl.dsp.window.close())
+
+-- Scratchpad: a hidden drawer layer. Alt+B opens/closes it, Alt+Shift+B parks the focused
+-- window there (or brings a parked one back to the current desktop).
+hl.bind(mainMod .. " + B", hl.dsp.workspace.toggle_special("scratch"))
+hl.bind(mainMod .. " + SHIFT + B", hl.dsp.exec_cmd([[
+if [ "$(hyprctl activewindow -j | jq -r .workspace.name)" = special:scratch ]; then
+    ws=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .activeWorkspace.name')
+    hyprctl dispatch "hl.dsp.window.move({ workspace = \"$ws\", follow = true })"
+else
+    hyprctl dispatch 'hl.dsp.window.move({ workspace = "special:scratch", follow = false })'
+fi]]))
 -- closeWindowBind:set_enabled(false)
 --hl.bind(mainMod .. " + M", hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"))
-hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
 -- Emoji picker (rofimoji in the themed launcher); the pick goes to the clipboard, paste with Ctrl+V
 hl.bind(mainMod .. " + G", hl.dsp.exec_cmd("rofimoji --selector hyprlauncher --action copy --clipboarder wl-copy"))
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
-hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))    -- dwindle only
 hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("hyprlock"))

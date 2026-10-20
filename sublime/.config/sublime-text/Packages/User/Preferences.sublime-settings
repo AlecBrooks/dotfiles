@@ -1,6 +1,8 @@
 // Settings in here override those in "Default/Preferences.sublime-settings",
 // and are overridden in turn by syntax-specific settings.
 {
+	// Ctrl+W / Win+X on the last file leaves the window open
+	"close_windows_when_empty": false,
     "hot_exit": false,
     "remember_open_files": false,
     "ignored_packages":

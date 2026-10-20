@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# newgit <name>: make ~/GitHub/<name>, git init it, and open it with opengit. Publish it later
+# with P in lazygit (Forgejo creates the private repo on the first push).
+set -euo pipefail
+
+[[ $# -eq 1 && -n "$1" && "$1" != */* ]] || { echo "usage: newgit <name>" >&2; exit 1; }
+dir="$HOME/GitHub/$1"
+[[ -e "$dir" ]] && { echo "newgit: $dir already exists (use: opengit $1)" >&2; exit 1; }
+
+mkdir -p "$dir"
+git -C "$dir" init -q
+echo "created $dir"
+exec "$(dirname "$(readlink -f "$0")")/opengit" "$dir"
