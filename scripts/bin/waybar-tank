@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""waybar-tank: a fish on the bar for MyFishTank, with how many creatures are alive in the tank, and an envelope
+with a count while visitors' messages in bottles are floating in it.
+
+  waybar-tank          print Waybar JSON: class "on" while the tank is the wallpaper on this bar's monitor
+                       (~/bin/tank-wallpaper), "off" otherwise, "away" when the tank can't be reached
+  waybar-tank toggle   switch the tank wallpaper on/off on this bar's monitor, then refresh the module
+
+Each bar knows its monitor from WAYBAR_OUTPUT_NAME (Waybar sets it); without it, the monitor under the mouse.
+
+The tank's address comes from ~/.config/tank-wallpaper.toml (url = "..."), default http://localhost:8800.
+"""
+import json
+import os
+import subprocess
+import sys
+import tomllib
+import urllib.request
+
+SIGNAL = 11         # matches "signal": 11 in the Waybar config
+FISH = '<span font_size="17pt" rise="-3pt">󰈺</span> '      # nerd-font fish, bigger than the bar's text
+NOTE = "󰇮"          # nerd-font envelope: a visitor's message in a bottle is floating in the tank
+WALLPAPER = os.path.expanduser("~/bin/tank-wallpaper")
+
+
+def tank_url():
+	try:
+		with open(os.path.expanduser("~/.config/tank-wallpaper.toml"), "rb") as f:
+			return tomllib.load(f).get("url", "http://localhost:8800").rstrip("/")
+	except (OSError, tomllib.TOMLDecodeError):
+		return "http://localhost:8800"
+
+
+def tank_age(ticks, calendar):
+	day = calendar["day"]
+	month, year = day * calendar["month"], day * calendar["month"] * calendar["year"]
+	for size, name in ((year, "year"), (month, "month"), (day, "day")):
+		if ticks >= size:
+			n = ticks // size
+			return f"{n} {name}{'' if n == 1 else 's'}"
+	return "under a day"
+
+
+def here():
+	#this bar's monitor: Waybar says which, else the one the mouse is on (where the click was)
+	name = os.environ.get("WAYBAR_OUTPUT_NAME")
+	if name:
+		return name
+	try:
+		x, y = (int(v) for v in subprocess.run(["hyprctl", "cursorpos"], capture_output=True, text=True,
+			timeout=3).stdout.split(","))
+		for m in json.loads(subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True,
+				timeout=3).stdout):
+			if m["x"] <= x < m["x"] + m["width"] / m["scale"] and m["y"] <= y < m["y"] + m["height"] / m["scale"]:
+				return m["name"]
+	except (OSError, ValueError, subprocess.SubprocessError):
+		pass
+	return ""
+
+
+def show():
+	on = subprocess.run([WALLPAPER, "status", here()], capture_output=True, text=True).stdout.strip() == "on"
+	state = "on" if on else "off"
+	click = "\nClick: " + ("back to your wallpaper" if on else "make the tank your wallpaper")
+	try:
+		with urllib.request.urlopen(tank_url() + "/api/info", timeout=3) as r:
+			info = json.load(r)
+	except (OSError, ValueError):
+		print(json.dumps({"text": f"{FISH} -", "class": "away",
+			"tooltip": f"MyFishTank: can't reach the tank at {tank_url()}" + click}))
+		return
+	lines = [f"MyFishTank: {info['alive']} alive" + (" (extinct)" if info.get("extinct") else "")]
+	if info.get("time") and info.get("tick") is not None:
+		lines.append(f"tank age: {tank_age(info['tick'], info['time'])}")
+	notes = (info.get("bottles") or {}).get("floating", 0)
+	if notes:
+		lines.append(f"{notes} note{'' if notes == 1 else 's'} floating in a bottle")
+	text = f"{FISH} {info['alive']}" + (f"  {NOTE} {notes}" if notes else "")
+	print(json.dumps({"text": text, "class": state, "tooltip": "\n".join(lines) + click}))
+
+
+def toggle():
+	subprocess.run([WALLPAPER, "toggle", here()], capture_output=True, timeout=10)
+	subprocess.run(["pkill", f"-RTMIN+{SIGNAL}", "-x", "waybar"], capture_output=True)
+
+
+if __name__ == "__main__":
+	toggle() if sys.argv[1:] == ["toggle"] else show()

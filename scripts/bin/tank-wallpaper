@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""tank-wallpaper: a MyFishTank glass as the wallpaper, on any monitor (each one on its own).
+
+  tank-wallpaper toggle [MONITOR]   on if it's off there, off if it's on
+  tank-wallpaper on|off [MONITOR]   (off all = every monitor)
+  tank-wallpaper status [MONITOR]   prints "on" or "off"
+  tank-wallpaper run MONITOR        the wallpaper window itself (what "on" starts in the background)
+
+MONITOR is a Hyprland output name (HDMI-A-1, DP-3...); left out, it's the one in the settings below, or the
+last monitor Hyprland lists.
+
+It draws on the compositor's bottom layer: above whatever wallpaper is already there (that keeps running
+underneath, untouched) and below every window. Clicks go straight through to the desktop. If the tank can't be
+reached it shows the empty water and keeps trying.
+
+Settings (optional), ~/.config/tank-wallpaper.toml:
+  url = "http://localhost:8800"     # the tank
+  monitor = "HDMI-A-1"              # when no monitor is given (default: the last monitor Hyprland lists)
+"""
+import json
+import os
+import signal
+import subprocess
+import sys
+import tomllib
+
+CONFIG = os.path.expanduser("~/.config/tank-wallpaper.toml")
+RUNTIME = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+RETRY = 15          # seconds between tries while the tank can't be reached
+
+
+def settings():
+	s = {"url": "http://localhost:8800", "monitor": None}
+	try:
+		with open(CONFIG, "rb") as f:
+			s.update(tomllib.load(f))
+	except (OSError, tomllib.TOMLDecodeError):
+		pass
+	return s
+
+
+def monitors():
+	out = subprocess.run(["hyprctl", "monitors", "-j"], capture_output=True, text=True, timeout=5)
+	return json.loads(out.stdout)
+
+
+def pick(name):
+	#the monitor asked for, else the settings' one, else the last one Hyprland lists
+	return name or settings()["monitor"] or (monitors()[-1]["name"] if monitors() else None)
+
+
+def pidfile(name):
+	return os.path.join(RUNTIME, f"tank-wallpaper-{name}.pid")
+
+
+def running(name):
+	#the wallpaper's pid on that monitor, if it's up (and really is this script, not a recycled pid)
+	try:
+		with open(pidfile(name)) as f:
+			pid = int(f.read().strip())
+		with open(f"/proc/{pid}/cmdline", "rb") as f:
+			if b"tank-wallpaper" in f.read():
+				return pid
+	except (OSError, ValueError):
+		pass
+	return None
+
+
+def turn_on(name):
+	if running(name):
+		return
+	subprocess.Popen([sys.executable, os.path.abspath(__file__), "run", name], start_new_session=True,
+		stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def turn_off(name):
+	pid = running(name)
+	if pid:
+		os.kill(pid, signal.SIGTERM)
+
+
+def monitor_geometry(name):
+	#where the monitor sits in the layout, from Hyprland (GTK 3 can't tell monitors apart by connector name)
+	m = next((m for m in monitors() if m["name"] == name), None)
+	return (m["x"], m["y"]) if m else None
+
+
+def run(name):
+	import cairo
+	import gi
+	gi.require_version("Gtk", "3.0")
+	gi.require_version("Gdk", "3.0")
+	gi.require_version("GtkLayerShell", "0.1")
+	gi.require_version("WebKit2", "4.1")
+	from gi.repository import Gdk, GLib, Gtk, GtkLayerShell, WebKit2
+
+	s = settings()
+	where = monitor_geometry(name)
+	display = Gdk.Display.get_default()
+	monitor = None
+	for i in range(display.get_n_monitors()):
+		g = display.get_monitor(i).get_geometry()
+		if where and (g.x, g.y) == where:
+			monitor = display.get_monitor(i)
+	if monitor is None:
+		sys.exit(f"tank-wallpaper: no monitor {name} found")
+
+	window = Gtk.Window()
+	GtkLayerShell.init_for_window(window)
+	GtkLayerShell.set_namespace(window, "tank-wallpaper")
+	GtkLayerShell.set_layer(window, GtkLayerShell.Layer.BOTTOM)
+	GtkLayerShell.set_monitor(window, monitor)
+	for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM, GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+		GtkLayerShell.set_anchor(window, edge, True)
+	GtkLayerShell.set_exclusive_zone(window, 0)     #like the wallpaper: it sits below the bar, not under it
+	GtkLayerShell.set_keyboard_mode(window, GtkLayerShell.KeyboardMode.NONE)
+
+	view = WebKit2.WebView()
+	view.set_background_color(Gdk.RGBA(0.012, 0.04, 0.086, 1))     #the deep water, not a white flash while loading
+	address = s["url"].rstrip("/") + "/?wallpaper"
+
+	def failed(*_):
+		GLib.timeout_add_seconds(RETRY, lambda: view.load_uri(address) and False)
+		return True                                 #no error page: just the empty water while it waits
+	view.connect("load-failed", failed)
+	view.load_uri(address)
+	window.add(view)
+	window.connect("realize", lambda w: w.input_shape_combine_region(cairo.Region()))      #clicks fall through
+	window.connect("destroy", Gtk.main_quit)
+	window.show_all()
+
+	with open(pidfile(name), "w") as f:
+		f.write(str(os.getpid()))
+	GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: Gtk.main_quit() or False)
+	try:
+		Gtk.main()
+	finally:
+		if running(name) == os.getpid():
+			os.remove(pidfile(name))
+
+
+if __name__ == "__main__":
+	cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
+	arg = sys.argv[2] if len(sys.argv) > 2 else None
+	if cmd == "off" and arg == "all":
+		for m in monitors():
+			turn_off(m["name"])
+		sys.exit()
+	name = pick(arg)
+	if cmd == "run":
+		run(name)
+	elif cmd == "on":
+		turn_on(name)
+	elif cmd == "off":
+		turn_off(name)
+	elif cmd == "toggle":
+		turn_off(name) if running(name) else turn_on(name)
+	elif cmd == "status":
+		print("on" if running(name) else "off")
+	else:
+		sys.exit(__doc__)

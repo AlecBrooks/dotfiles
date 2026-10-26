@@ -9,7 +9,8 @@
     // Choose the order of the modules
     "modules-left": [
         "hyprland/workspaces",
-        "group/media-drawer"
+        "group/media-drawer",
+        "custom/tank"
     ],
 
     "modules-center": [
@@ -168,6 +169,15 @@
         "interval": 300,
         "signal": 10,
         "on-click": "$HOME/bin/focus-or-launch '^body-tracker$' $HOME/bin/body-tracker"
+    },
+    // Fish: MyFishTank, with how many creatures are alive (+ an envelope while visitors' notes float in it). Click swaps the wallpaper on
+    // that bar's monitor for the tank and back (~/bin/waybar-tank, ~/bin/tank-wallpaper; address in ~/.config/tank-wallpaper.toml)
+    "custom/tank": {
+        "exec": "$HOME/bin/waybar-tank",
+        "return-type": "json",
+        "interval": 15,
+        "signal": 11,
+        "on-click": "$HOME/bin/waybar-tank toggle"
     },
     // Globe: an alert counter from a private script (~/.local/bin, not in this repo).
     "custom/globe": {
