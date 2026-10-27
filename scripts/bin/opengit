@@ -4,7 +4,12 @@
 # as the shell), lazygit top right, yazi bottom right. With no argument, pick the repo from a
 # list (the Alt+S launcher). The Obsidian vault is left out on purpose. Run from a terminal,
 # that terminal closes first so the layout starts from an empty desktop.
+# The layout always opens on the main monitor (OPENGIT_MONITOR, default DP-3); whatever is on
+# its current workspace moves to the other monitor's (OPENGIT_SPILL, default HDMI-A-1) first.
 set -euo pipefail
+# Its windows are launched by kitty with whatever PATH this got (from Hyprland: no ~/bin), so put ~/bin
+# first: lazygit and yazi there are the desktop-theme-aware wrappers.
+export PATH="$HOME/bin:$PATH"
 
 root="$HOME/GitHub"
 
@@ -54,6 +59,23 @@ if [[ -n "${OPENGIT_CLOSE:-}" ]]; then
         hyprctl clients -j | jq -e --argjson p "$OPENGIT_CLOSE" 'any(.pid == $p)' >/dev/null || break
         sleep 0.1
     done
+fi
+
+# Clear the main monitor: move its windows to the spill monitor's current workspace (by address,
+# since every Sublime window shares one pid), then focus it so new windows open there. Cursor
+# warps are off while we work so the mouse doesn't jump between monitors.
+main="${OPENGIT_MONITOR:-DP-3}" spill="${OPENGIT_SPILL:-HDMI-A-1}"
+IFS='|' read -r main_ws spill_ws < <(hyprctl monitors -j | jq -r --arg m "$main" --arg s "$spill" \
+    '"\(map(select(.name == $m))[0].activeWorkspace.id // "")|\(map(select(.name == $s))[0].activeWorkspace.id // "")"')
+if [[ "${main_ws:-}" =~ ^[0-9]+$ && "${spill_ws:-}" =~ ^[0-9]+$ ]]; then
+    if [[ "$(hyprctl getoption cursor:no_warps | head -1)" == "bool: false" ]]; then
+        hyprctl eval 'hl.config({ cursor = { no_warps = true } })' >/dev/null
+        trap "hyprctl eval 'hl.config({ cursor = { no_warps = false } })' >/dev/null" EXIT
+    fi
+    for a in $(hyprctl clients -j | jq -r --argjson w "$main_ws" '.[] | select(.workspace.id == $w) | .address'); do
+        hyprctl dispatch "hl.dsp.window.move({ workspace = $spill_ws, follow = false, window = \"address:$a\" })" >/dev/null
+    done
+    hyprctl dispatch "hl.dsp.focus({ monitor = \"$main\" })" >/dev/null
 fi
 
 # Dwindle splits the focused window; preselect picks the side (otherwise the mouse decides).

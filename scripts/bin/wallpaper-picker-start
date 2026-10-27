@@ -17,6 +17,12 @@ if [[ "$ready" != true ]]; then
     exit 1
 fi
 
+# A non-default desktop theme (~/bin/theme) brings its own desk instead of the Wallpaper Engine one.
+theme="$(tr -d '[:space:]' <"$HOME/.local/state/desktop-theme/current" 2>/dev/null)"
+if [[ -n "$theme" && "$theme" != wallpaper ]]; then
+    exec "$HOME/bin/theme" --login
+fi
+
 if "$HOME/.local/bin/wallpaper-picker" --apply-saved; then
     exit 0
 fi
@@ -25,7 +31,4 @@ echo "No saved wallpaper was applied; starting Waybar without one." >&2
 if [[ ! -f "$HOME/.cache/wallpaper-theme/waybar-colors.css" ]]; then
     "$HOME/bin/wallpaper-theme" --image /usr/share/hypr/wall0.png --no-reload --no-restart-apps || true
 fi
-if ! pgrep -u "$(id -u)" -x waybar >/dev/null; then
-    mkdir -p "$HOME/.local/state/wallpaper-picker"
-    setsid -f waybar >>"$HOME/.local/state/wallpaper-picker/waybar.log" 2>&1 </dev/null
-fi
+"$HOME/bin/waybar-start"

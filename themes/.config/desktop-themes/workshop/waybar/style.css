@@ -1,0 +1,144 @@
+/* Workshop theme bar: a header strip of instrument readouts on smoked glass.
+ *
+ * Rules (the same as the rest of the theme):
+ *   - structure is hairlines in dim amber (@outline_variant); nothing is boxed for decoration
+ *   - text you read is off-white (@on_surface); labels are small, letter-spaced, dim amber
+ *   - brightness means state: amber = active, bright amber = needs you, red-orange = trouble
+ * Colors come from the theme's palette via the same generated file the default bar uses. */
+@import url("../../../../.cache/wallpaper-theme/waybar-colors.css");
+
+* {
+    font-family: "IBM Plex Sans Condensed", "JetBrainsMono Nerd Font Propo", sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    border-radius: 0;
+    min-height: 0;
+    box-shadow: none;
+}
+
+window#waybar {
+    /* @surface_dim at 70%: Hyprland blurs what's behind (layer rule in the theme's hypr apply()). */
+    background-color: alpha(@surface_dim, 0.70);
+    border-bottom: 1px solid @outline_variant;
+    color: @on_surface;
+}
+
+tooltip {
+    background-color: alpha(@surface_dim, 0.94);
+    border: 1px solid @outline_variant;
+    border-top: 2px solid @primary;
+}
+tooltip label { color: @on_surface; padding: 2px 4px; }
+
+/* Every readout: same padding, a hairline on its left. */
+#custom-mark, #workspaces, #cava, #mpris, #custom-media-prev, #custom-media-next,
+#custom-logme, #custom-globe, #custom-vpn, #custom-jarvis, #custom-weather, #cpu, #memory,
+#temperature, #custom-gpu, #pulseaudio, #bluetooth, #battery, #clock, #custom-notifications,
+#image.tray-toggle, #tray, #custom-power {
+    padding: 0 10px;
+    margin: 0;
+    color: @on_surface;
+    background-color: transparent;
+    border-left: 1px solid alpha(@outline_variant, 0.7);
+}
+
+/* The sheet number: the one solid block, so you always know which screen you're looking at. */
+#custom-mark {
+    border-left: none;
+    padding: 0 12px;
+    background-color: @primary;
+    color: @on_primary;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 2px;
+}
+
+/* Desks: the one showing is lit with an underline, like a selected tab on a drawing set. */
+#workspaces { padding: 0 4px; }
+#workspaces button {
+    padding: 0 7px;
+    color: @outline;
+    background: transparent;
+    border-bottom: 2px solid transparent;
+    font-family: "JetBrainsMono Nerd Font Propo", monospace;
+    font-size: 12px;
+}
+#workspaces button.visible,
+#workspaces button.active { color: @on_surface; border-bottom: 2px solid @primary; }
+#workspaces button:hover { background: alpha(@primary, 0.12); color: @on_surface; }
+#workspaces button.urgent { color: @error; border-bottom: 2px solid @error; }
+
+#window {
+    color: @on_surface_variant;
+    font-size: 13px;
+}
+window#waybar.empty #window { color: transparent; }
+
+/* Media: the visualizer is a level meter, in amber like every other reading. */
+#cava {
+    color: @primary;
+    font-family: monospace;
+    font-size: 13px;
+    min-width: 90px;
+}
+#mpris { color: @on_surface_variant; }
+#mpris:hover, #custom-media-prev:hover, #custom-media-next:hover { color: @primary; }
+.media-drawer-item { border-left: none; }
+
+
+#custom-logme.due { color: @on_primary; background-color: alpha(@primary, 0.85); font-weight: 600; }
+
+#custom-globe.new { color: @on_primary; background-color: @primary; }
+#custom-globe.quiet, #custom-globe.offline { color: @outline; }
+
+#custom-vpn.on { color: @primary; }
+#custom-vpn.off { color: @outline; }
+#custom-vpn.down { color: @error; }
+
+/* VOX (the voice assistant, custom/jarvis): dim = off, off-white = standing by, amber = listening, lit block = working/speaking. */
+#custom-jarvis { color: @on_surface; font-weight: 600; }
+#custom-jarvis.off { color: @outline; }
+#custom-jarvis.listening { color: @primary; box-shadow: inset 0 -2px @primary; }
+#custom-jarvis.working,
+#custom-jarvis.speaking { color: @on_primary; background-color: @primary; }
+
+/* Load and heat: plain when fine, amber when busy/warm, red-orange when it's a problem. */
+#cpu.busy, #memory.busy, #custom-gpu.warm { color: @yellow; }
+#cpu.critical, #memory.critical, #temperature.critical, #custom-gpu.hot { color: @error; }
+#custom-gpu.critical {
+    color: @error;
+    animation: workshop-alert 0.8s steps(2) infinite alternate;
+}
+@keyframes workshop-alert { to { background-color: alpha(@error, 0.25); } }
+
+#pulseaudio.muted { color: @outline; }
+#pulseaudio:hover { color: @primary; }
+
+#bluetooth.off, #bluetooth.disabled { color: @outline; }
+#bluetooth.connected { color: @primary; }
+
+#battery.warning:not(.charging) { color: @yellow; }
+#battery.critical:not(.charging) { color: @error; animation: workshop-alert 0.8s steps(2) infinite alternate; }
+
+#clock { font-family: "JetBrainsMono Nerd Font Propo", monospace; font-size: 13px; }
+
+#custom-notifications { color: @on_surface_variant; }
+#custom-notifications.notification { color: @primary; }
+#custom-notifications.dnd-none,
+#custom-notifications.dnd-notification { color: @outline; }
+
+#tray { border-left: none; }
+#tray > .needs-attention { background-color: alpha(@error, 0.3); }
+#tray menu { background-color: @surface_dim; border: 1px solid @outline_variant; }
+
+#custom-power { color: @on_surface_variant; padding: 0 12px; }
+#custom-power:hover { color: @on_primary; background-color: @error; }
+
+menu, .menu {
+    background-color: alpha(@surface_dim, 0.96);
+    border: 1px solid @outline_variant;
+    border-top: 2px solid @primary;
+}
+menuitem:hover { background-color: alpha(@primary, 0.18); }
+menuitem label { color: @on_surface; }

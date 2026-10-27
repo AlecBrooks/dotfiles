@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# lock: hyprlock with the active desktop theme's lock screen (~/bin/theme); the default theme uses
+# ~/.config/hypr/hyprlock.conf as always. Does nothing if it's already locked.
+pgrep -u "$(id -u)" -x hyprlock >/dev/null && exit 0
+theme="$(tr -d '[:space:]' <"$HOME/.local/state/desktop-theme/current" 2>/dev/null)"
+conf="$HOME/.config/desktop-themes/${theme:-wallpaper}/hyprlock.conf"
+if [[ -n "$theme" && "$theme" != wallpaper && -r "$conf" ]]; then
+    exec hyprlock -c "$conf" "$@"
+fi
+exec hyprlock "$@"

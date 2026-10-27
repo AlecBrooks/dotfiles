@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# waybar-start: (re)start Waybar detached, with the active desktop theme's bar (~/bin/theme).
+# The default theme is plain `waybar` (~/.config/waybar); a theme with its own waybar/ folder
+# gets that config and style instead. Never SIGUSR2-reloads: the cava module segfaults on that.
+#
+# Usage: waybar-start [--restart]   (without --restart it does nothing if Waybar is running)
+set -uo pipefail
+
+if pgrep -u "$(id -u)" -x waybar >/dev/null; then
+    [[ "${1:-}" == --restart ]] || exit 0
+    pkill -u "$(id -u)" -TERM -x waybar 2>/dev/null
+    for _ in $(seq 1 20); do pgrep -u "$(id -u)" -x waybar >/dev/null || break; sleep 0.1; done
+fi
+
+theme="$(tr -d '[:space:]' <"$HOME/.local/state/desktop-theme/current" 2>/dev/null)"
+args=()
+dir="$HOME/.config/desktop-themes/${theme:-wallpaper}/waybar"
+if [[ -n "$theme" && "$theme" != wallpaper && -r "$dir/config.jsonc" ]]; then
+    args=(-c "$dir/config.jsonc" -s "$dir/style.css")
+fi
+
+mkdir -p "$HOME/.local/state/wallpaper-picker"
+# 9>&- : don't hand an inherited lock fd (wallpaper-theme's flock) to the long-lived bar.
+setsid -f waybar "${args[@]}" >>"$HOME/.local/state/wallpaper-picker/waybar.log" 2>&1 </dev/null 9>&-

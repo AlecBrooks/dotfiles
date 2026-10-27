@@ -1,0 +1,103 @@
+# Workshop theme prompt (used instead of ~/.config/starship.toml while the workshop theme is active;
+# wallpaper-theme fills in the palette). Same language as the bar and the desk: a hairline bracket,
+# the machine as the one lit block, then small dim LABELS before values, nothing decorative.
+#
+#   ┌ TARLAVA  ~/dotfiles  GIT main +1 ~2  PY 3.14  TOOK 4s              12:04 AM
+#   └ ›
+"$schema" = 'https://starship.rs/config-schema.json'
+
+format = """
+[┌](fg:color_bg3)\
+$hostname\
+$directory\
+$git_branch\
+$git_status\
+$python\
+$nodejs\
+$rust\
+$golang\
+$c\
+$cpp\
+$java\
+$docker_context\
+$cmd_duration\
+$line_break\
+[└](fg:color_bg3)\
+$character"""
+right_format = "$time"
+add_newline = true
+palette = 'wallpaper'
+
+[hostname]
+ssh_only = false
+format = '[ $hostname ](bold bg:color_orange fg:#15130f)'
+aliases = { "Luthien" = "LUTHIEN", "tarlava" = "TARLAVA", "luthien" = "LUTHIEN" }
+
+[directory]
+format = '  [$path](fg:color_fg0)[$read_only](fg:color_red)'
+truncation_length = 3
+truncation_symbol = "…/"
+read_only = " RO"
+
+[directory.substitutions]
+"Documents" = "docs"
+"Downloads" = "dl"
+
+[git_branch]
+format = '  [GIT](fg:color_blue) [$branch](fg:color_orange)'
+
+[git_status]
+format = '( [$all_status$ahead_behind](fg:color_yellow_bright))'
+ahead = "↑${count} "
+behind = "↓${count} "
+diverged = "↕${ahead_count}/${behind_count} "
+modified = "~${count} "
+staged = "+${count} "
+untracked = "?${count} "
+deleted = "-${count} "
+renamed = "»${count} "
+stashed = "s${count} "
+conflicted = "!${count} "
+
+[python]
+format = '  [PY](fg:color_blue) [${version}( $virtualenv)](fg:color_fg0)'
+version_format = "${major}.${minor}"
+
+[nodejs]
+format = '  [NODE](fg:color_blue) [$version](fg:color_fg0)'
+version_format = "${major}.${minor}"
+
+[rust]
+format = '  [RS](fg:color_blue) [$version](fg:color_fg0)'
+version_format = "${major}.${minor}"
+
+[golang]
+format = '  [GO](fg:color_blue) [$version](fg:color_fg0)'
+version_format = "${major}.${minor}"
+
+[c]
+format = '  [C](fg:color_blue) [$name $version](fg:color_fg0)'
+
+[cpp]
+format = '  [C++](fg:color_blue) [$name $version](fg:color_fg0)'
+
+[java]
+format = '  [JAVA](fg:color_blue) [$version](fg:color_fg0)'
+version_format = "${major}"
+
+[docker_context]
+format = '  [DOCKER](fg:color_blue) [$context](fg:color_fg0)'
+
+[cmd_duration]
+min_time = 2000
+format = '  [TOOK](fg:color_blue) [$duration](fg:color_fg0)'
+
+[time]
+disabled = false
+time_format = "%I:%M %p"
+format = '[$time](fg:color_blue)'
+
+[character]
+success_symbol = '[›](bold fg:color_orange)'
+error_symbol = '[›](bold fg:color_red)'
+vimcmd_symbol = '[‹](bold fg:color_orange)'

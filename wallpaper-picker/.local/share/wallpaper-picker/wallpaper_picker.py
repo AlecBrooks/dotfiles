@@ -490,8 +490,11 @@ def restart_waybar() -> None:
     with WAYBAR_LOG_FILE.open("ab", buffering=0) as log:
         # `setsid -f` re-parents Waybar to the user manager, which reaps it when it is later
         # replaced; a direct child of this (long-lived) GUI would linger as a zombie.
+        # ~/bin/waybar-start picks the active desktop theme's bar (~/bin/theme); plain Waybar without it.
+        starter = Path.home() / "bin" / "waybar-start"
+        command = [str(starter)] if os.access(starter, os.X_OK) else ["setsid", "-f", executable]
         subprocess.Popen(
-            ["setsid", "-f", executable],
+            command,
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -1220,7 +1223,15 @@ def main() -> int:
         action="store_true",
         help="Apply the saved monitor assignments without opening the GUI.",
     )
+    parser.add_argument(
+        "--stop",
+        action="store_true",
+        help="Stop linux-wallpaperengine (a desktop theme with its own background, see ~/bin/theme).",
+    )
     args = parser.parse_args()
+    if args.stop:
+        stop_engine()
+        return 0
     return apply_saved() if args.apply_saved else run_gui()
 
 

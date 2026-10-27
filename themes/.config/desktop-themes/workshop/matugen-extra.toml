@@ -1,0 +1,21 @@
+# Templates only the workshop theme renders (wallpaper-theme appends this to the matugen config while
+# the theme is active). Its hook deletes these outputs when switching back, so the default never has them.
+[templates.workshop_lazygit]
+input_path  = '~/.config/desktop-themes/workshop/templates/lazygit.yml'
+output_path = '~/.cache/wallpaper-theme/theme/lazygit.yml'
+
+[templates.workshop_yazi]
+input_path  = '~/.config/desktop-themes/workshop/templates/yazi-theme.toml'
+output_path = '~/.cache/wallpaper-theme/theme/yazi/theme.toml'
+
+[templates.workshop_tmux]
+input_path  = '~/.config/desktop-themes/workshop/templates/tmux.conf'
+output_path = '~/.cache/wallpaper-theme/theme/tmux.conf'
+
+[templates.workshop_sublime_ui]
+input_path  = '~/.config/desktop-themes/workshop/templates/Adaptive.sublime-theme'
+output_path = '~/.config/sublime-text/Packages/User/Adaptive.sublime-theme'
+
+[templates.workshop_swaync]
+input_path  = '~/.config/desktop-themes/workshop/templates/swaync.css'
+output_path = '~/.config/swaync/style.css'

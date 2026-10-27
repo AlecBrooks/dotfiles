@@ -344,6 +344,7 @@ window#waybar {
 #custom-tank,
 #custom-globe,
 #custom-vpn,
+#custom-jarvis,
 #custom-weather,
 #custom-gpu,
 #battery,
@@ -417,6 +418,7 @@ window#waybar {
 #custom-tank,
 #custom-globe,
 #custom-vpn,
+#custom-jarvis,
 #custom-weather,
 #custom-gpu,
 #battery,
@@ -612,7 +614,7 @@ tooltip label {
     color: @on_surface;
 }
 
-/* Body Tracker reminder (custom/logme): accent block while today isn't logged, hidden after */
+/* Health Tracker reminder (custom/logme): heart-pulse icon in an accent block while today isn't logged, hidden after */
 #custom-logme {
     padding: 0 10px;
     color: @on_primary;
@@ -638,6 +640,17 @@ tooltip label {
 #custom-vpn.on { color: @primary; }
 #custom-vpn.off { color: @on_surface_variant; }
 #custom-vpn.down { color: @error; }
+
+/* Jarvis (custom/jarvis): white = standing by, half-lit = listening, lit = working/speaking, dim = off */
+#custom-jarvis {
+    padding: 0 10px;
+    background-color: @surface_dim;
+    color: @on_surface;
+}
+#custom-jarvis.listening { color: @on_primary_container; background-color: @primary_container; }
+#custom-jarvis.working,
+#custom-jarvis.speaking { color: @on_primary; background-color: @primary; }
+#custom-jarvis.off { color: @outline; }
 
 /* GPU temp (custom/gpu): plain = fine, amber = warm, red = hot, flashing red = near the limit */
 #custom-gpu {

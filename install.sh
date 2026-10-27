@@ -25,6 +25,8 @@ STOW_PACKAGES=(
   waybar
   matugen
   wallpaper-picker
+  themes
+  rgb
 )
 
 # Tied to the original owner's accounts (Radicale calendar/contacts); only with --personal.
@@ -49,7 +51,9 @@ MANAGED_PATHS=(
   ".config/fastfetch"
   ".config/waybar"
   ".config/matugen"
+  ".config/desktop-themes"
   ".config/systemd/user/wallpaper-picker-start.service"
+  ".config/systemd/user/openrgb-server.service"
   ".local/bin/wallpaper-picker"
   ".local/share/wallpaper-picker"
   ".local/share/applications/wallpaper-picker.desktop"
@@ -343,8 +347,8 @@ setup_user() {
   if [[ -f /usr/share/applications/zen.desktop ]]; then
     "$HOME/bin/zen-start" --install-desktop || warn "could not write the Zen launcher entry"
   fi
-  # Launcher entry for the Body Tracker in ~/Applications (Seafile-synced).
-  "$HOME/bin/body-tracker" --install-desktop || warn "could not write the Body Tracker launcher entry"
+  # Launcher entry for the Health Tracker in ~/Applications (Seafile-synced).
+  "$HOME/bin/health-tracker" --install-desktop || warn "could not write the Health Tracker launcher entry"
 
   [[ "$SETUP_SERVICES" == true ]] || return 0
 

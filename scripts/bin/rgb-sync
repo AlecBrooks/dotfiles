@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# rgb-sync: set every RGB device OpenRGB knows to the desktop theme's accent color (the palette's
+# `primary`, so amber in the workshop theme and the wallpaper's accent in the default one), steady, at RGB_MAX.
+# The RAM is left to Jarvis while he's running (he lights it by state). Needs the OpenRGB server
+# (openrgb-server.service); without one it does nothing. Called by wallpaper-theme after every
+# theme or wallpaper change.
+#
+# Usage: rgb-sync [--wait]   (--wait: give a just-started server up to 30 s to come up)
+COLORS="$HOME/.cache/wallpaper-theme/.colors.json"
+RGB_MAX="${RGB_MAX:-0.5}"   # brightness cap: the accent at full strength is harsh (Jarvis's RAM lights use the same)
+up() { (exec 3<>/dev/tcp/127.0.0.1/6742) 2>/dev/null; }
+if [[ "${1:-}" == --wait ]]; then
+    for _ in $(seq 1 30); do up && break; sleep 1; done
+    sleep 2   # the port opens before detection has finished
+fi
+up || exit 0
+command -v openrgb >/dev/null || exit 0
+
+hex="$(python3 -c "
+import json, sys
+h = json.load(open(sys.argv[1]))['colors']['primary']['default']['color']
+print(''.join('%02X' % round(int(h[i:i + 2], 16) * float(sys.argv[2])) for i in (1, 3, 5)))" "$COLORS" "$RGB_MAX" 2>/dev/null)"
+[[ -n "$hex" ]] || exit 0
+
+jarvis_on() {   # the state file is "<state> <pid>"; a live pid means Jarvis owns the RAM
+    local st pid
+    read -r st pid <"$HOME/.local/share/jarvis/state" 2>/dev/null || return 1
+    [[ "$st" != off && -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+openrgb -l 2>/dev/null | sed -n 's/^\([0-9]\+\): \(.*\)$/\1\t\2/p' | while IFS=$'\t' read -r idx name; do
+    [[ "$name" == *DRAM* ]] && jarvis_on && continue
+    openrgb -d "$idx" -m static -c "$hex" >/dev/null 2>&1 || echo "rgb-sync: $name: could not set" >&2
+done

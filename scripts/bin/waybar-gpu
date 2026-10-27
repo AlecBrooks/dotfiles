@@ -19,6 +19,7 @@ import subprocess
 
 STATE = os.path.expanduser("~/.cache/waybar-gpu.state")
 ICON = "\U000f08ae"  # nerd-font expansion card
+ICON = os.environ.get("WAYBAR_GPU_LABEL", ICON)  # a theme can show a word instead of the glyph
 LEVELS = ["ok", "warm", "hot", "critical"]
 MARGINS = {"warm": 10, "hot": 5, "critical": 2}  # degrees below the sensor's crit
 

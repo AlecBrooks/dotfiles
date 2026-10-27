@@ -48,7 +48,9 @@ def main():
         return
     if subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", "hyprlock"],
                       stdout=subprocess.DEVNULL).returncode != 0:
-        subprocess.Popen(["hyprlock"], start_new_session=True, stdin=subprocess.DEVNULL,
+        # ~/bin/lock = hyprlock with the active desktop theme's lock screen
+        lock = os.path.join(os.path.dirname(os.path.realpath(__file__)), "lock")
+        subprocess.Popen([lock] if os.access(lock, os.X_OK) else ["hyprlock"], start_new_session=True, stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(0.8)  # lock first, so the session is never left open
     press_vt_key(target)

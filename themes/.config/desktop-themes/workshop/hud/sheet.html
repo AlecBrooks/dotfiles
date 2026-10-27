@@ -1,0 +1,640 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>workshop sheet</title>
+<!--
+  The workshop desk: one drafting sheet per monitor, at true scale (the grid is real millimeters,
+  from the monitor's EDID size), with a title block and panels of live readouts. hud.py pushes the
+  data in with hud.update({...}); this page only draws. Each panel names its source in its header.
+-->
+<style>
+:root {
+    --ink: #0f0e0c; --panel: #15130f; --panel2: #1c1914; --rule: #4a3d2a; --rule-hi: #7a6443;
+    --amber: #d99a3e; --amber-hi: #f2b85c; --amber-lo: #4a3415; --text: #e4dccd; --text-dim: #b3a893;
+    --alert: #e0603a; --data: #6fa8a0; --ok: #a3b56b;
+    --mm: 3.62px;
+    --sans: "IBM Plex Sans Condensed", "JetBrainsMono Nerd Font", sans-serif;
+    --mono: "JetBrainsMono Nerd Font Mono", "JetBrains Mono", monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--ink); color: var(--text);
+    font-family: var(--sans); font-size: 13px; -webkit-font-smoothing: antialiased; cursor: default; }
+
+/* The sheet: 5 mm minor / 10 mm major grid, faint enough to read as paper, not pattern. */
+#sheet { position: absolute; inset: 0;
+    background-image:
+        linear-gradient(to right, color-mix(in srgb, var(--rule) 34%, transparent) 1px, transparent 1px),
+        linear-gradient(to bottom, color-mix(in srgb, var(--rule) 34%, transparent) 1px, transparent 1px),
+        linear-gradient(to right, color-mix(in srgb, var(--rule) 15%, transparent) 1px, transparent 1px),
+        linear-gradient(to bottom, color-mix(in srgb, var(--rule) 15%, transparent) 1px, transparent 1px);
+    background-size: calc(var(--mm) * 10) calc(var(--mm) * 10), calc(var(--mm) * 10) calc(var(--mm) * 10),
+                     calc(var(--mm) * 5) calc(var(--mm) * 5), calc(var(--mm) * 5) calc(var(--mm) * 5);
+    background-position: var(--gx, 0) var(--gy, 0);
+}
+
+/* Drawing frame, 10 mm in (and below the bar). Zone references in the margin: columns 1..n and rows
+   A..n every 50 mm, the way drawing sheets are indexed. */
+#frame { position: absolute; left: var(--fx); right: var(--fx); top: var(--fy); bottom: var(--fx);
+    border: 1px solid var(--rule); }
+.zone { position: absolute; font: 600 9px var(--mono); color: var(--rule-hi); letter-spacing: 1px; }
+.zone.col { transform: translateX(-50%); }
+.zone.row { transform: translateY(-50%); }
+.tick { position: absolute; background: var(--rule); }
+
+#cols { position: absolute; inset: calc(var(--mm) * 4); display: grid;
+    grid-template-columns: minmax(0, 400px) 1fr minmax(0, 400px); gap: calc(var(--mm) * 5); }
+.col { display: flex; flex-direction: column; gap: calc(var(--mm) * 3); min-height: 0; }
+/* Ring pinned near the top: the exchange box below it grows downward only. The gap clears the voice
+   bars, which reach ~50 px beyond the ring. */
+#center { display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    padding-top: 56px; gap: 74px; }
+
+/* Panels: smoked glass with a hairline, a header strip naming what it is and where it comes from. */
+.panel { background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid var(--rule); }
+.panel > header { display: flex; justify-content: space-between; align-items: baseline;
+    padding: 4px 9px; border-bottom: 1px solid var(--rule); background: color-mix(in srgb, var(--panel2) 80%, transparent); }
+.panel > header b { font: 600 10px var(--sans); letter-spacing: 2.2px; color: var(--amber); }
+.panel > header i { font: normal 9.5px var(--mono); color: var(--rule-hi); }
+.panel .body { padding: 9px 10px 10px; }
+
+.lbl { font: 600 9px var(--sans); letter-spacing: 1.6px; color: var(--rule-hi); text-transform: uppercase; }
+.val { font-family: var(--mono); color: var(--text); font-variant-numeric: tabular-nums; }
+.dim { color: var(--text-dim); }
+.big { font: 300 40px/1 var(--sans); color: var(--text); font-variant-numeric: tabular-nums; }
+.big small { font-size: 16px; color: var(--text-dim); margin-left: 2px; }
+.row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; align-items: baseline; }
+.kv .val { text-align: right; }
+.split { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; }
+
+/* Bars: a hairline track, the fill in amber; warn/alert past the thresholds the readings name. */
+.bar { height: 5px; background: color-mix(in srgb, var(--rule) 45%, transparent); margin: 4px 0 7px; position: relative; }
+.bar > span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--amber); }
+.bar.warn > span { background: var(--amber-hi); }
+.bar.alert > span { background: var(--alert); }
+.threads { display: flex; gap: 3px; height: 46px; align-items: flex-end; margin: 10px 0 2px; }
+.threads > div { flex: 1; background: color-mix(in srgb, var(--rule) 40%, transparent); height: 100%; position: relative; }
+.threads > div > span { position: absolute; bottom: 0; left: 0; right: 0; background: var(--amber); }
+.threadn { display: flex; gap: 3px; } .threadn > div { flex: 1; text-align: center; font: 8px var(--mono); color: var(--rule-hi); }
+svg.spark { width: 100%; height: 46px; display: block; margin-top: 8px; }
+.warn { color: var(--amber-hi); } .alert { color: var(--alert); }
+table { width: 100%; border-collapse: collapse; }
+td { padding: 2px 0; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+td.n { text-align: right; color: var(--text-dim); width: 78px; padding-left: 10px; }
+td.name { max-width: 1px; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+.dot { display: inline-block; width: 7px; height: 7px; border: 1px solid var(--rule-hi); margin-right: 7px; vertical-align: 0; }
+.dot.on { background: var(--amber); border-color: var(--amber); }
+
+/* Title block: real drawing metadata, all of it true. */
+#title { margin-top: auto; border: 1px solid var(--rule-hi); background: color-mix(in srgb, var(--panel) 88%, transparent);
+    display: grid; grid-template-columns: 1fr 1fr 1fr 1.35fr; }
+#title > div { padding: 4px 8px; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); min-width: 0; }
+#title > div:nth-child(4n) { border-right: none; }
+#title > .wide { grid-column: span 4; border-right: none; }
+#title .lbl { font-size: 8px; display: block; }
+#title .val { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+#title .name { font: 600 19px var(--sans); letter-spacing: 3px; color: var(--text); }
+#title .name em { font-style: normal; color: var(--amber); }
+
+/* Jarvis: the ring IS the state. Off = dashed, standing by = steady, listening = breathing,
+   working = one turning arc, speaking = lit. Nothing moves unless Jarvis is doing something. */
+#jarvis { position: relative; width: 340px; height: 340px; }
+#jarvis svg { width: 100%; height: 100%; overflow: visible; }
+#jarvis .bezel { fill: none; stroke: var(--rule); stroke-width: 1; }
+#jarvis .ring { fill: none; stroke: var(--amber); stroke-width: 3; opacity: .55; transition: opacity .4s, stroke .4s; }
+#jarvis .arc { fill: none; stroke: var(--amber-hi); stroke-width: 3; opacity: 0; transform-origin: 170px 170px; }
+#jarvis .inner { fill: color-mix(in srgb, var(--panel) 80%, transparent); stroke: var(--rule); stroke-width: 1; }
+#jarvis.off .ring { stroke: var(--rule-hi); stroke-dasharray: 3 7; opacity: .7; }
+#jarvis.listening .ring { opacity: 1; animation: breathe 1.6s ease-in-out infinite alternate; }
+#jarvis.working .ring { opacity: .3; }
+#jarvis.working .arc { opacity: 1; animation: turn 1.4s linear infinite; }
+#jarvis.speaking .ring { stroke: var(--amber-hi); opacity: 1; filter: drop-shadow(0 0 6px var(--amber)); }
+@keyframes breathe { from { opacity: .45; } to { opacity: 1; } }
+@keyframes turn { to { transform: rotate(360deg); } }
+#jarvis .label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+#jarvis .label .lbl { font-size: 10px; letter-spacing: 4px; }
+#jarvis .state { font: 500 22px var(--sans); letter-spacing: 3px; }
+#jarvis.off .state { color: var(--text-dim); }
+#jarvis.listening .state, #jarvis.working .state { color: var(--amber); }
+#jarvis.speaking .state { color: var(--amber-hi); }
+#voice { position: absolute; left: -60px; top: -60px; width: 460px; height: 460px; pointer-events: none; }
+#neural { position: absolute; left: 0; top: 0; width: 340px; height: 340px; pointer-events: none; }
+#exchange { width: min(560px, 100%); }
+#exchange p { font-size: 13px; line-height: 1.45; margin: 2px 0 6px; color: var(--text); white-space: pre-wrap; }
+/* The whole exchange, never cut off; past this height the oldest lines slide up out of view. */
+#exchange .body { max-height: 330px; overflow: hidden; }
+#exchange .caret { color: var(--amber); }
+#exchange p.you { color: var(--text-dim); }
+
+/* Day dial */
+#dial { width: 600px; height: 600px; max-width: 100%; }
+#dial text { font-family: var(--mono); }
+#agenda .day { margin: 8px 0 3px; padding-bottom: 2px; border-bottom: 1px solid var(--rule); display: flex; justify-content: space-between; }
+#agenda .day:first-child { margin-top: 0; }
+#agenda .item { display: grid; grid-template-columns: 92px 1fr; gap: 8px; padding: 1.5px 0; font-size: 13px; }
+#agenda .item .t { font: 12px var(--mono); color: var(--text-dim); }
+#agenda .item.past { opacity: .4; }
+#agenda .item.now .t, #agenda .item.now .w { color: var(--amber-hi); }
+.entry { margin-bottom: 10px; } .entry:last-child { margin-bottom: 0; }
+.entry p { font-size: 13px; line-height: 1.45; color: var(--text); margin-top: 2px;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.cgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 12px; margin-top: 8px; }
+.cgrid div { font: 11.5px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.cgrid div.down { color: var(--rule-hi); text-decoration: line-through; }
+.cgrid div.sick .dot { background: var(--alert); border-color: var(--alert); }
+.media-title { font: 500 17px/1.3 var(--sans); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 2px 0 4px; }
+.empty { color: var(--rule-hi); font: 11px var(--mono); letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<div id="sheet"></div>
+<div id="frame"><div id="cols"><div class="col" id="left"></div><div id="center"></div><div class="col" id="right"></div></div></div>
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const GiB = b => (b / 2 ** 30).toFixed(1);
+function bytes(b) {
+    const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
+    while (b >= 1000 && i < u.length - 1) { b /= 1000; i++; }
+    return (b >= 100 || i === 0 ? b.toFixed(0) : b.toFixed(1)) + " " + u[i];
+}
+const rate = b => bytes(b) + "/s";
+const pct = (a, b) => b ? Math.max(0, Math.min(100, 100 * a / b)) : 0;
+const bar = (p, warn = 80, alert = 92) => `<div class="bar ${p >= alert ? "alert" : p >= warn ? "warn" : ""}"><span style="width:${p.toFixed(1)}%"></span></div>`;
+const panel = (id, title, src, body = "") => `<section class="panel" id="${id}"><header><b>${title}</b><i>${esc(src)}</i></header><div class="body">${body}</div></section>`;
+const two = n => String(n).padStart(2, "0");
+const hhmm = d => { let h = d.getHours(); const ap = h < 12 ? "AM" : "PM"; h = h % 12 || 12; return `${two(h)}:${two(d.getMinutes())} ${ap}`; };
+const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"], MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+const dayName = d => `${DAYS[d.getDay()]} ${two(d.getDate())} ${MONTHS[d.getMonth()]}`;
+function dur(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+    return d ? `${d}d ${h}h` : h ? `${h}h ${two(m)}m` : `${m} min`;
+}
+const parseT = s => s ? new Date(s.replace(" ", "T")) : null;
+
+function spark(series, colors, max) {
+    // series: arrays of numbers over the last N samples, drawn left (old) to right (now), 90 slots
+    const W = 380, H = 46, N = 90;
+    max = max || Math.max(1, ...series.flat());
+    const paths = series.map((s, k) => {
+        const pts = s.map((v, i) => `${(W * (N - s.length + i) / (N - 1)).toFixed(1)},${(H - 1 - (H - 2) * Math.min(v, max) / max).toFixed(1)}`);
+        return pts.length > 1 ? `<polyline points="${pts.join(" ")}" fill="none" stroke="${colors[k]}" stroke-width="1.3"/>` : "";
+    }).join("");
+    const grid = [0.25, 0.5, 0.75].map(f => `<line x1="0" x2="${W}" y1="${H * f}" y2="${H * f}" stroke="var(--rule)" stroke-width=".5" stroke-dasharray="2 4"/>`).join("");
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}<line x1="0" x2="${W}" y1="${H - .5}" y2="${H - .5}" stroke="var(--rule)"/>${paths}</svg>`;
+}
+
+// Update an element's content in place: same structure keeps the same nodes (bars glide with CSS
+// transitions instead of jumping), anything structurally different is replaced.
+function morph(from, to) {
+    if (from.nodeType !== to.nodeType || from.nodeName !== to.nodeName) { from.replaceWith(to.cloneNode(true)); return; }
+    if (from.nodeType === 3) { if (from.nodeValue !== to.nodeValue) from.nodeValue = to.nodeValue; return; }
+    if (from.nodeType !== 1) return;
+    for (const a of [...from.attributes]) if (!to.hasAttribute(a.name)) from.removeAttribute(a.name);
+    for (const a of to.attributes) if (from.getAttribute(a.name) !== a.value) from.setAttribute(a.name, a.value);
+    const fc = [...from.childNodes], tc = [...to.childNodes];
+    for (let i = 0; i < tc.length; i++) i < fc.length ? morph(fc[i], tc[i]) : from.appendChild(tc[i].cloneNode(true));
+    for (let i = tc.length; i < fc.length; i++) fc[i].remove();
+}
+function set(el, html) {
+    if (!el) return;
+    const t = document.createElement(el.tagName);
+    t.innerHTML = html;
+    if (el.tagName === "svg" || el instanceof SVGElement) { el.innerHTML = html; return; }
+    morph(el, Object.assign(t, { className: el.className, id: el.id }));
+}
+const ago = t => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? Math.round(s / 60) + " min ago" : s < 129600 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " days ago"; };
+
+const hud = {
+    meta: null,
+    jarvisState: null, jarvisSince: null,
+    voiceData: null, levels: null, animating: false,
+
+    update(d) {
+        if (d.meta) return this.setup(d.meta);
+        if (!this.meta) return;
+        if (d.now) this.now = new Date(d.now * 1000);
+        if (d.error) console.log("hud data error: " + d.error);
+        if (d.voice) { this.voiceData = d.voice; this.animate(); this.voiceArrived(d.voice); return; }
+        if (d.jarvis) { this.jarvis(d.jarvis); return; }
+        try { this.meta.sheet === "system" ? this.system(d) : this.day(d); }
+        catch (e) { console.log("hud draw error: " + e.stack); }
+        this.titleblock(d);
+    },
+
+    setup(m) {
+        this.meta = m;
+        this.now = new Date();
+        const r = document.documentElement.style;
+        const map = { background: "--ink", surface: "--panel", surface_container: "--panel2", outline_variant: "--rule",
+            outline: "--rule-hi", primary: "--amber", yellow: "--amber-hi", primary_container: "--amber-lo",
+            on_surface: "--text", on_surface_variant: "--text-dim", error: "--alert", tertiary: "--data", green: "--ok" };
+        for (const [k, v] of Object.entries(m.palette || {})) if (map[k]) r.setProperty(map[k], v);
+        const mm = m.mm_w ? window.innerWidth / m.mm_w : 3.62;   // CSS px per real millimeter
+        this.mm = mm;
+        r.setProperty("--mm", mm + "px");
+        const fx = Math.round(10 * mm), fy = 30 + fx;   // a full margin below the 30 px bar, zone labels included
+        r.setProperty("--fx", fx + "px"); r.setProperty("--fy", fy + "px");
+        r.setProperty("--gx", fx + "px"); r.setProperty("--gy", fy + "px");   // grid lines meet the frame corner
+        // zone references every 50 mm
+        const frame = $("#frame"), W = window.innerWidth - 2 * fx, H = window.innerHeight - fy - fx;
+        let z = "";
+        for (let i = 0, x = 0; x < W; i++, x += 50 * mm) {
+            if (i) z += `<div class="tick" style="left:${x}px;top:-${0.4 * fx}px;width:1px;height:${0.4 * fx}px"></div>`;
+            if (x + 25 * mm < W) z += `<div class="zone col" style="left:${x + 25 * mm}px;top:-${fx * 0.62}px">${i + 1}</div>`;
+        }
+        for (let i = 0, y = 0; y < H; i++, y += 50 * mm) {
+            if (i) z += `<div class="tick" style="top:${y}px;left:-${0.4 * fx}px;height:1px;width:${0.4 * fx}px"></div>`;
+            if (y + 25 * mm < H) z += `<div class="zone row" style="top:${y + 25 * mm}px;left:-${fx * 0.62}px">${String.fromCharCode(65 + i)}</div>`;
+        }
+        frame.insertAdjacentHTML("afterbegin", z);
+        m.sheet === "system" ? this.buildSystem() : this.buildDay();
+        $("#right").insertAdjacentHTML("beforeend", `<div id="title"></div>`);
+    },
+
+    // ------------------------------------------------------------ sheet 1: SYSTEM
+    buildSystem() {
+        $("#left").innerHTML = panel("cpu", "PROCESSOR", "/proc/stat · k10temp") + panel("mem", "MEMORY", "/proc/meminfo")
+            + panel("gpu", "GRAPHICS", "amdgpu") + panel("disk", "STORAGE", "statvfs") + panel("procs", "PROCESSES", "by cpu, 1 s");
+        $("#right").innerHTML = panel("net", "NETWORK", "/proc/net/dev") + panel("links", "LINKS", "tailscale")
+            + panel("server", "SERVER", "ssh " + this.meta.server);
+        $("#center").innerHTML = `<div id="jarvis" class="off"><canvas id="voice" width="460" height="460"></canvas><svg viewBox="0 0 340 340">
+              <circle class="bezel" cx="170" cy="170" r="168"/>
+              <circle class="ring" cx="170" cy="170" r="156"/>
+              <circle class="arc" cx="170" cy="170" r="156" stroke-dasharray="122 858"/>
+              <circle class="inner" cx="170" cy="170" r="132"/>
+            </svg><canvas id="neural" width="340" height="340"></canvas><div class="label"><span class="lbl">VOX</span><span class="state">OFFLINE</span><span class="lbl" id="jsince"></span></div></div>
+            ${panel("exchange", "LAST EXCHANGE", "conversation.log", `<span class="empty">NOTHING SAID YET</span>`)}`;
+    },
+
+    system(d) {
+        const c = d.cpu;
+        if (c) {
+            const t = c.temp, tc = t >= 85 ? "alert" : t >= 75 ? "warn" : "";
+            set($("#cpu .body"), `<div class="split"><div><span class="lbl">USAGE</span><div class="big">${c.usage.toFixed(0)}<small>%</small></div></div>
+                <div class="kv"><span class="lbl">TEMP</span><span class="val ${tc}">${t != null ? t.toFixed(1) + " °C" : "n/a"}</span>
+                <span class="lbl">CLOCK</span><span class="val">${c.mhz ? (c.mhz / 1000).toFixed(2) + " GHz" : "n/a"}</span>
+                <span class="lbl">AVG 1/5/15</span><span class="val">${c.load.join(" ")}</span></div></div>
+                <div class="threads">${c.threads.map(u => `<div><span style="height:${u}%"></span></div>`).join("")}</div>
+                <div class="threadn">${c.threads.map((_, i) => `<div>${two(i)}</div>`).join("")}</div>
+                ${spark([c.history], ["var(--amber)"], 100)}
+                <div class="row"><span class="lbl">${esc(c.model)} · ${c.threads.length} threads</span><span class="lbl">3 min</span></div>`);
+        }
+        const m = d.memory;
+        if (m) {
+            const p = pct(m.used, m.total), sp = pct(m.swap_used, m.swap_total);
+            set($("#mem .body"), `<div class="row"><span class="lbl">IN USE</span><span class="val">${GiB(m.used)} / ${GiB(m.total)} GiB</span></div>${bar(p)}
+                <div class="row"><span class="lbl">SWAP</span><span class="val">${GiB(m.swap_used)} / ${GiB(m.swap_total)} GiB</span></div>${bar(sp, 50, 85)}
+                <div class="row"><span class="lbl">FILE CACHE</span><span class="val dim">${GiB(m.cached)} GiB</span></div>`);
+        }
+        const g = d.gpu;
+        if (g) {
+            const jc = g.junction_crit || 110, jt = g.junction >= jc - 10 ? "alert" : g.junction >= jc - 25 ? "warn" : "";
+            $("#gpu header i").textContent = "amdgpu · " + g.name;
+            set($("#gpu .body"), `<div class="split"><div><span class="lbl">BUSY</span><div class="big">${(g.busy ?? 0).toFixed(0)}<small>%</small></div></div>
+                <div class="kv"><span class="lbl">EDGE</span><span class="val">${g.edge?.toFixed(0) ?? "–"} °C</span>
+                <span class="lbl">JUNCTION</span><span class="val ${jt}">${g.junction?.toFixed(0) ?? "–"} / ${jc.toFixed(0)} °C</span>
+                <span class="lbl">MEMORY</span><span class="val">${g.mem?.toFixed(0) ?? "–"} °C</span>
+                <span class="lbl">FAN</span><span class="val">${g.fan ? g.fan.toFixed(0) + " rpm" : "stopped"}</span></div></div>
+                <div class="row" style="margin-top:8px"><span class="lbl">POWER</span><span class="val">${g.power?.toFixed(0) ?? "–"} / ${g.power_cap?.toFixed(0) ?? "–"} W</span></div>${bar(pct(g.power, g.power_cap), 85, 97)}
+                <div class="row"><span class="lbl">VRAM</span><span class="val">${GiB(g.vram_used)} / ${GiB(g.vram_total)} GiB</span></div>${bar(pct(g.vram_used, g.vram_total))}`);
+        } else set($("#gpu .body"), `<span class="empty">NO AMD GPU SENSORS</span>`);
+        if (d.storage) set($("#disk .body"), d.storage.map(s => {
+            const p = pct(s.used, s.total);
+            return `<div class="row"><span><span class="val">${esc(s.mount)}</span> <span class="lbl">${esc(s.fs)} · ${esc(s.dev)}</span></span><span class="val dim">${bytes(s.used)} / ${bytes(s.total)}</span></div>${bar(p, 85, 95)}`;
+        }).join(""));
+        if (d.procs) set($("#procs .body"), `<table>${d.procs.map(p => `<tr><td class="name">${esc(p.name)}</td><td class="n">${p.cpu.toFixed(1)}%</td><td class="n">${bytes(p.mem)}</td></tr>`).join("")}</table>`);
+        const n = d.net;
+        if (n) {
+            const hist = n.history || [];
+            set($("#net .body"), `<div class="split"><div><span class="lbl" style="color:var(--amber)">▼ DOWN</span><div class="val" style="font-size:20px">${rate(n.down)}</div></div>
+                <div style="text-align:right"><span class="lbl" style="color:var(--data)">▲ UP</span><div class="val" style="font-size:20px">${rate(n.up)}</div></div></div>
+                ${spark([hist.map(h => h[0]), hist.map(h => h[1])], ["var(--amber)", "var(--data)"])}
+                <div class="row" style="margin-top:6px"><span class="lbl">${esc(n.iface)}</span><span class="val dim">${esc(n.ip)}</span></div>
+                <div class="row"><span class="lbl">SINCE BOOT</span><span class="val dim">▼ ${bytes(n.rx_total)}  ▲ ${bytes(n.tx_total)}</span></div>`);
+        }
+        const L = d.links;
+        if (L !== undefined) set($("#links .body"), !L ? `<span class="empty">TAILSCALE NOT RUNNING</span>` :
+            `<table>${L.peers.map(p => `<tr><td class="name"><span class="dot ${p.online ? "on" : ""}"></span>${esc(p.name)}</td><td class="n">${p.exit ? "EXIT" : ""}</td><td class="n">${p.online ? "online" : "offline"}</td></tr>`).join("")}</table>
+             <div class="row" style="margin-top:6px"><span class="lbl">ROUTE</span><span class="val ${L.exit ? "" : "dim"}">${L.exit ? "via " + esc(L.exit) : "direct"}</span></div>`);
+        const S = d.server;
+        if (S !== undefined) {
+            if (!S || !S.reachable) set($("#server .body"), `<span class="empty alert">${esc((S && S.host || "server").toUpperCase())} UNREACHABLE</span>`);
+            else {
+                const up = S.containers.filter(c => c.up).length, sick = S.containers.filter(c => c.health === "unhealthy").length;
+                const arr = S.array === "STARTED" ? `started · ${S.disks} disk${S.disks === "1" ? "" : "s"}` : S.array.toLowerCase() || "n/a";
+                set($("#server .body"), `<div class="kv"><span class="lbl">ARRAY</span><span class="val ${S.array === "STARTED" ? "" : "alert"}">${esc(arr)}${S.resync != null ? ` · parity ${S.resync}%` : ""}</span>
+                    <span class="lbl">LOAD</span><span class="val">${S.load.join(" ")}</span>
+                    <span class="lbl">CPU</span><span class="val ${S.temp >= 70 ? "alert" : ""}">${S.temp != null ? S.temp.toFixed(0) + " °C" : "n/a"}</span>
+                    <span class="lbl">UP</span><span class="val">${S.uptime ? dur(S.uptime) : "–"}</span></div>
+                    <div class="row" style="margin-top:6px"><span class="lbl">SHARES</span><span class="val">${bytes(S.share_used)} / ${bytes(S.share_total)}</span></div>${bar(pct(S.share_used, S.share_total), 85, 95)}
+                    <div class="row"><span class="lbl">MEMORY</span><span class="val">${GiB(S.mem_used)} / ${GiB(S.mem_total)} GiB</span></div>${bar(pct(S.mem_used, S.mem_total))}
+                    <div class="row"><span class="lbl">CONTAINERS</span><span class="val ${sick ? "alert" : ""}">${up} running${sick ? ` · ${sick} unhealthy` : ""} · ${S.containers.length - up} stopped</span></div>
+                    <div class="cgrid">${S.containers.map(c => `<div class="${c.up ? "" : "down"} ${c.health === "unhealthy" ? "sick" : ""}"><span class="dot ${c.up ? "on" : ""}"></span>${esc(c.name)}</div>`).join("")}</div>`);
+            }
+        }
+    },
+
+    jarvis(j) {
+        const el = $("#jarvis");
+        if (!el) return;
+        const words = { off: "OFFLINE", standby: "STANDING BY", listening: "LISTENING", working: "WORKING", speaking: "SPEAKING" };
+        if (j.state !== this.jarvisState) { this.jarvisState = j.state; this.jarvisSince = this.now; el.className = j.state; }
+        if (j.state === "working") this.think();
+        $(".state", el).textContent = words[j.state] || j.state.toUpperCase();
+        $("#jsince").textContent = "for " + dur((this.now - this.jarvisSince) / 1000);
+        this.lines = j.last;
+        this.trackLines();
+        this.renderExchange();
+    },
+
+    // Jarvis's voice around the ring: the spectrum of the sentence he's saying, which Jarvis writes
+    // just before playing it, drawn in time with the playback. Nothing else makes it move.
+    // His words appear as he says them: each Vox line is revealed across the audio clip that speaks it
+    // (one spoken block = one clip; the clip's start and length come with the voice data). Lines from
+    // before the page loaded are shown whole; a line whose audio never comes shows whole after 6 s.
+    trackLines() {
+        this.reveal = this.reveal || new Map();
+        const now = Date.now() / 1000;
+        for (const l of this.lines || []) {
+            if (l.who === "You") continue;
+            const key = l.text;
+            if (!this.reveal.has(key)) this.reveal.set(key, this.exchangeLoaded ? { seen: now, start: null, dur: 0 } : { done: true });
+        }
+        this.exchangeLoaded = true;
+    },
+    voiceArrived(v) {
+        if (!this.reveal) return;
+        for (const r of this.reveal.values())
+            if (!r.done && r.start === null) { r.start = v.start; r.dur = v.frames.length / v.fps; break; }
+        this.renderExchange();
+    },
+    renderExchange() {
+        const lines = this.lines || [], now = Date.now() / 1000;
+        let moving = false;
+        const html = lines.map(l => {
+            let text = esc(l.text);
+            if (l.who !== "You") {
+                const r = this.reveal && this.reveal.get(l.text);
+                if (r && !r.done) {
+                    if (r.start === null) {
+                        if (now - r.seen > 6) r.done = true; else { text = `<span class="caret">▍</span>`; moving = true; }
+                    } else {
+                        const f = Math.max(0, Math.min(1, (now - r.start) / Math.max(r.dur, .5)));
+                        if (f >= 1) r.done = true;
+                        else { text = esc(l.text.slice(0, Math.ceil(f * l.text.length))) + `<span class="caret">▍</span>`; moving = true; }
+                    }
+                }
+            }
+            return `<span class="lbl">${l.who === "You" ? "YOU" : "VOX"}</span><p class="${l.who === "You" ? "you" : ""}">${text}</p>`;
+        }).join("");
+        const body = $("#exchange .body");
+        set(body, html || `<span class="empty">NOTHING SAID YET</span>`);
+        if (body) body.scrollTop = body.scrollHeight;          // newest words always in view
+        clearTimeout(this.exchangeTimer);
+        if (moving) this.exchangeTimer = setTimeout(() => this.renderExchange(), 50);
+    },
+
+    // Thinking (state "working" only): dots drifting inside the ring, linked when they come close, with
+    // pulses running along the links and dots flaring as a pulse arrives. Fades in and out with the state.
+    think() {
+        if (this.thinking) return;
+        const cv = $("#neural"), ctx = cv && cv.getContext("2d");
+        if (!ctx) return;
+        this.thinking = true;
+        const css = getComputedStyle(document.documentElement);
+        const amber = css.getPropertyValue("--amber").trim() || "#d99a3e", hi = css.getPropertyValue("--amber-hi").trim() || "#f2b85c";
+        const C = 170, R = 118, LINK = 74, N = 30;
+        if (!this.nodes) this.nodes = Array.from({ length: N }, () => {
+            const a = Math.random() * 2 * Math.PI, r = Math.sqrt(Math.random()) * R;
+            return { x: C + r * Math.cos(a), y: C + r * Math.sin(a), vx: (Math.random() - .5) * .5, vy: (Math.random() - .5) * .5, flash: 0 };
+        });
+        const nodes = this.nodes, pulses = [];
+        let fade = this.thinkFade || 0;
+        const step = () => {
+            const on = this.jarvisState === "working";
+            fade = Math.max(0, Math.min(1, fade + (on ? .06 : -.05)));
+            this.thinkFade = fade;
+            for (const n of nodes) {                       // drift, kept inside the ring
+                n.x += n.vx; n.y += n.vy;
+                const dx = n.x - C, dy = n.y - C, d = Math.hypot(dx, dy);
+                if (d > R) { n.vx -= dx / d * .08; n.vy -= dy / d * .08; }
+                n.flash *= .9;
+            }
+            const links = [];
+            for (let i = 0; i < N; i++) for (let k = i + 1; k < N; k++) {
+                const d = Math.hypot(nodes[i].x - nodes[k].x, nodes[i].y - nodes[k].y);
+                if (d < LINK) links.push([i, k, 1 - d / LINK]);
+            }
+            if (on && links.length && Math.random() < .3) {   // a new impulse somewhere
+                const [i, k] = links[Math.floor(Math.random() * links.length)];
+                pulses.push(Math.random() < .5 ? { a: i, b: k, t: 0 } : { a: k, b: i, t: 0 });
+            }
+            ctx.clearRect(0, 0, 340, 340);
+            // the text in the middle stays readable: everything is fainter near the center line
+            const quiet = (y) => Math.abs(y - C) < 34 ? .35 : 1;
+            ctx.lineWidth = 1;
+            for (const [i, k, s] of links) {
+                ctx.strokeStyle = amber;
+                ctx.globalAlpha = s * .45 * fade * Math.min(quiet(nodes[i].y), quiet(nodes[k].y));
+                ctx.beginPath(); ctx.moveTo(nodes[i].x, nodes[i].y); ctx.lineTo(nodes[k].x, nodes[k].y); ctx.stroke();
+            }
+            for (let p = pulses.length - 1; p >= 0; p--) {
+                const q = pulses[p], A = nodes[q.a], B = nodes[q.b];
+                q.t += .07;
+                if (q.t >= 1) {                             // arrived: the dot flares, and maybe fires on
+                    B.flash = 1;
+                    pulses.splice(p, 1);
+                    if (on && Math.random() < .55) {
+                        const next = links.filter(l => l[0] === q.b || l[1] === q.b);
+                        if (next.length) { const l = next[Math.floor(Math.random() * next.length)]; pulses.push({ a: q.b, b: l[0] === q.b ? l[1] : l[0], t: 0 }); }
+                    }
+                    continue;
+                }
+                const x = A.x + (B.x - A.x) * q.t, y = A.y + (B.y - A.y) * q.t;
+                ctx.globalAlpha = fade * quiet(y);
+                ctx.fillStyle = hi;
+                ctx.beginPath(); ctx.arc(x, y, 1.8, 0, 2 * Math.PI); ctx.fill();
+            }
+            for (const n of nodes) {
+                ctx.globalAlpha = (.45 + .55 * n.flash) * fade * quiet(n.y);
+                ctx.fillStyle = n.flash > .2 ? hi : amber;
+                ctx.beginPath(); ctx.arc(n.x, n.y, 1.6 + 1.8 * n.flash, 0, 2 * Math.PI); ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+            if (on || fade > 0) setTimeout(step, 33);
+            else { ctx.clearRect(0, 0, 340, 340); this.thinking = false; }
+        };
+        step();
+    },
+
+    animate() {
+        if (this.animating) return;
+        this.animating = true;
+        const cv = $("#voice"), ctx = cv && cv.getContext("2d");
+        if (!ctx) { this.animating = false; return; }
+        const css = getComputedStyle(document.documentElement), hi = css.getPropertyValue("--amber-hi").trim() || "#f2b85c";
+        const step = () => {
+            const v = this.voiceData, nowS = Date.now() / 1000;
+            let target = null;
+            if (v && nowS >= v.start) { const f = Math.floor((nowS - v.start) * v.fps); if (f < v.frames.length) target = v.frames[f]; }
+            const n = target ? target.length : (this.levels ? this.levels.length : 32);
+            if (!this.levels || this.levels.length !== n) this.levels = new Array(n).fill(0);
+            let any = false;
+            for (let i = 0; i < n; i++) {
+                const t = target ? target[i] : 0;
+                this.levels[i] = t > this.levels[i] ? this.levels[i] + (t - this.levels[i]) * .6 : this.levels[i] * .86;
+                if (this.levels[i] > .01) any = true;
+            }
+            ctx.clearRect(0, 0, 460, 460);
+            // low notes at the top, higher ones running down both sides: one symmetric figure
+            const R0 = 176, LEN = 40;
+            ctx.strokeStyle = hi; ctx.lineCap = "butt"; ctx.lineWidth = 3;
+            for (let i = 0; i < n; i++) {
+                const l = this.levels[i];
+                if (l < .02) continue;
+                ctx.globalAlpha = .35 + .65 * l;
+                for (const side of [1, -1]) {
+                    const a = -Math.PI / 2 + side * (i + .5) * Math.PI / n;
+                    const c = Math.cos(a), s = Math.sin(a);
+                    ctx.beginPath(); ctx.moveTo(230 + c * R0, 230 + s * R0); ctx.lineTo(230 + c * (R0 + 2 + LEN * l), 230 + s * (R0 + 2 + LEN * l)); ctx.stroke();
+                }
+            }
+            ctx.globalAlpha = 1;
+            // a plain 30 fps timer (the voice data is 30 fps): requestAnimationFrame stops while
+            // windows cover the sheet, and the ring has to be right the moment they move away
+            const pending = v && nowS < v.start + v.frames.length / v.fps;   // still to come or playing
+            if (pending || any) setTimeout(step, 33); else this.animating = false;
+        };
+        step();
+    },
+
+    // ------------------------------------------------------------ sheet 2: DAY
+    buildDay() {
+        $("#left").innerHTML = panel("journal", "JOURNAL", "obsidian · Journal/") + panel("projects", "ACTIVE PROJECTS", "obsidian · Projects/");
+        $("#right").innerHTML = panel("media", "NOW PLAYING", "mpris") + panel("weather", "OUTSIDE", "open-meteo");
+        $("#center").innerHTML = `<svg id="dial" viewBox="-300 -300 600 600"></svg>`;
+    },
+
+    day(d) {
+        const now = this.now;
+        const sod = new Date(now); sod.setHours(0, 0, 0, 0);
+        const eod = new Date(sod.getTime() + 86400000);
+        if (d.calendar) this.calendar = d.calendar;
+        this.dial(this.calendar || [], now, sod, eod);
+        if (d.journal !== undefined) set($("#journal .body"), !(d.journal || []).length ? `<span class="empty">NO JOURNAL ENTRIES</span>` :
+            d.journal.map(e => { const dd = new Date(e.date + "T12:00"), rel = Math.round((sod - new Date(e.date + "T00:00")) / 86400000);
+                return `<div class="entry"><div class="row"><span class="lbl" style="color:var(--amber)">${dayName(dd)}</span><span class="lbl">${rel === 0 ? "TODAY" : rel === 1 ? "YESTERDAY" : rel + " DAYS AGO"}</span></div><p>${esc(e.text)}</p></div>`; }).join(""));
+        if (d.projects !== undefined) set($("#projects .body"), `<table>${(d.projects || []).map(p => `<tr><td class="name">${esc(p.name)}</td><td class="n" style="width:110px">${ago(p.mtime)}</td></tr>`).join("")}</table>`);
+        const m = d.media;
+        set($("#media .body"), !m ? `<span class="empty">NOTHING PLAYING</span>` :
+            `<div class="row"><span class="lbl" style="color:${m.status === "Playing" ? "var(--amber)" : ""}">${m.status === "Playing" ? "▶ PLAYING" : "❚❚ PAUSED"}</span><span class="lbl">${esc(m.player)}</span></div>
+             <div class="media-title">${esc(m.title)}</div><div class="dim">${esc(m.artist)}</div>
+             ${m.length ? `${bar(pct(m.position, m.length), 101, 101)}<div class="row"><span class="val dim">${dur(m.position)}</span><span class="val dim">${dur(m.length)}</span></div>` : ""}`);
+        const w = d.weather;
+        if (w !== undefined) {
+            const tip = (w && w.tooltip || "").split("\n");
+            const where = (tip[0] || "").split(":");
+            set($("#weather .body"), !w ? `<span class="empty">NO WEATHER DATA</span>` :
+                `<div class="split"><div class="big">${esc(w.text)}</div><div class="kv"><span class="lbl">WHERE</span><span class="val">${esc(where[0])}</span>
+                 <span class="lbl">SKY</span><span class="val">${esc((where[1] || "").trim())}</span>
+                 <span class="lbl">FEELS</span><span class="val">${esc((tip[1] || "").replace(/^Feels like\s*/i, ""))}</span></div></div>`);
+        }
+    },
+
+    dial(cal, now, sod, eod) {
+        // A 24-hour dial, midnight at the top, clockwise. Today's appointments are arcs on the track; the
+        // hand is now; the elapsed part of the day is shaded. The center says what's on now or next.
+        const R = 230, TW = 22, ang = t => ((t - sod) / 86400000) * 2 * Math.PI - Math.PI / 2;
+        const P = (a, r) => [(r * Math.cos(a)).toFixed(2), (r * Math.sin(a)).toFixed(2)];
+        const arc = (a0, a1, r) => { const [x0, y0] = P(a0, r), [x1, y1] = P(a1, r); return `M${x0} ${y0}A${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1} ${y1}`; };
+        let s = `<circle r="${R + TW / 2 + 22}" fill="none" stroke="var(--rule)"/>
+                 <circle r="${R}" fill="none" stroke="color-mix(in srgb, var(--rule) 55%, transparent)" stroke-width="${TW}"/>
+                 <circle r="${R - TW / 2 - 40}" fill="color-mix(in srgb, var(--panel) 80%, transparent)" stroke="var(--rule)"/>`;
+        // elapsed part of the day, just inside the track
+        const an = ang(now);
+        s += `<path d="${arc(-Math.PI / 2, an, R - TW / 2 - 7)}" fill="none" stroke="var(--amber)" stroke-opacity=".35" stroke-width="3"/>`;
+        // hour ticks: every hour, long every 3, labelled every 2 (24 h clock: the dial is a whole day)
+        for (let h = 0; h < 24; h++) {
+            const a = (h / 24) * 2 * Math.PI - Math.PI / 2, long = h % 3 === 0;
+            const [x0, y0] = P(a, R + TW / 2 + 2), [x1, y1] = P(a, R + TW / 2 + (long ? 14 : 8));
+            s += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="var(--rule-hi)" stroke-width="${long ? 1.4 : 1}"/>`;
+            if (h % 2 === 0) { const [tx, ty] = P(a, R + TW / 2 + 32); s += `<text x="${tx}" y="${ty}" font-size="12" fill="${long ? "var(--text-dim)" : "var(--rule-hi)"}" text-anchor="middle" dominant-baseline="central">${two(h)}</text>`; }
+        }
+        // today's appointments
+        let current = null, next = null;
+        for (const e of cal) {
+            const st = parseT(e.start), en = parseT(e.end);
+            if (!st || !en) continue;
+            if (st <= now && now < en) current = current || e;
+            if (st > now && (!next || st < parseT(next.start))) next = e;
+            if (en <= sod || st >= eod) continue;
+            const a0 = ang(Math.max(st, sod)), a1 = ang(Math.min(en, eod));
+            const done = en <= now, on = st <= now && now < en;
+            s += `<path d="${arc(a0, Math.max(a1, a0 + 0.004), R)}" fill="none" stroke="${on ? "var(--amber-hi)" : done ? "var(--amber-lo)" : "var(--amber)"}" stroke-width="${TW - 6}"/>`;
+            const label = e.what.toUpperCase();
+            if ((a1 - a0) * R > label.length * 7.5 + 10) {   // label it if it fits along the arc (the agenda lists everything)
+                // written along the track, turned so it never reads upside down
+                const am = (a0 + a1) / 2, [lx, ly] = P(am, R);
+                let deg = am * 180 / Math.PI + 90;
+                if (deg > 90 && deg < 270) deg += 180;
+                s += `<text x="${lx}" y="${ly}" transform="rotate(${deg.toFixed(1)} ${lx} ${ly})" font-size="10.5" font-weight="700" letter-spacing="1" fill="${done ? "var(--text-dim)" : "var(--ink)"}" text-anchor="middle" dominant-baseline="central">${esc(label)}</text>`;
+            }
+        }
+        // the hand
+        const [hx0, hy0] = P(an, 120), [hx1, hy1] = P(an, R + TW / 2 + 16);
+        s += `<line x1="${hx0}" y1="${hy0}" x2="${hx1}" y2="${hy1}" stroke="var(--amber-hi)" stroke-width="2"/><circle cx="${hx1}" cy="${hy1}" r="3.5" fill="var(--amber-hi)"/>`;
+        // center readout
+        let line1 = "NOTHING SCHEDULED", line2 = "";
+        if (current) { line1 = "NOW · " + current.what.toUpperCase(); line2 = dur((parseT(current.end) - now) / 1000) + " left"; }
+        else if (next) { line1 = "NEXT · " + next.what.toUpperCase(); line2 = "in " + dur((parseT(next.start) - now) / 1000); }
+        s += `<text y="-58" font-size="11" letter-spacing="3" fill="var(--rule-hi)" text-anchor="middle" font-family="var(--sans)" font-weight="600">${dayName(now)} ${now.getFullYear()}</text>
+              <text y="-4" font-size="54" fill="var(--text)" text-anchor="middle" font-family="var(--sans)" font-weight="300">${hhmm(now).slice(0, 5)}</text>
+              <text y="26" font-size="13" letter-spacing="2" fill="var(--text-dim)" text-anchor="middle">${hhmm(now).slice(6)}</text>
+              <text y="66" font-size="13" letter-spacing="1.5" fill="var(--amber)" text-anchor="middle" font-family="var(--sans)" font-weight="600">${esc(line1.slice(0, 30))}</text>
+              <text y="86" font-size="12" fill="var(--text-dim)" text-anchor="middle">${esc(line2)}</text>`;
+        $("#dial").innerHTML = s;
+    },
+
+    titleblock(d) {
+        const m = this.meta, now = this.now;
+        const start = new Date(now.getFullYear(), 0, 1), doy = Math.floor((now - start) / 86400000) + 1;
+        const week = (() => { const t = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())); const dn = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - dn); const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil(((t - y0) / 86400000 + 1) / 7); })();
+        const cells = m.sheet === "system"
+            ? [["UPTIME", d.uptime ? dur(d.uptime) : "–"], ["KERNEL", d.kernel || "–"]]
+            : [["WEEK", String(week)], ["DAY", `${doy} of ${new Date(now.getFullYear(), 1, 29).getDate() === 29 ? 366 : 365}`]];
+        const c = (l, v, cls = "") => `<div class="${cls}"><span class="lbl">${l}</span><span class="val">${esc(v)}</span></div>`;
+        $("#title").innerHTML = `<div class="wide"><span class="lbl">TITLE</span><span class="name">${esc(m.host.toUpperCase())} <em>/</em> ${m.sheet === "system" ? "SYSTEM" : "DAY"}</span></div>`
+            + c("SHEET", `${m.index} OF ${m.count}`) + c("OUTPUT", m.monitor) + c("SCALE", m.mm_w ? "1 : 1" : "n/a") + c("GRID", "5 / 10 mm")
+            + c("DRAWN", m.user) + c("DATE", `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`)
+            + c(cells[0][0], cells[0][1]) + c(cells[1][0], cells[1][1]);
+    },
+};
+window.hud = hud;
+
+// hud.py writes the sheet's data into files in ?data=DIR; read them here (it never calls into the page).
+const DATA = new URLSearchParams(location.search).get("data");
+function readJSON(name, cb) {
+    const x = new XMLHttpRequest();
+    x.open("GET", "file://" + DATA + "/" + name + "?" + Date.now());   // the query keeps it out of the cache
+    x.onload = () => { let v; try { v = JSON.parse(x.responseText); } catch (e) { return; } cb(v); };
+    x.send();
+}
+function start(meta) {
+    hud.update({ meta });
+    let lastData = null, lastJarvis = null, lastVoice = null;
+    const data = () => readJSON("data.json", d => { if (d.now !== lastData) { lastData = d.now; hud.update(d); } });
+    data(); setInterval(data, 1000);
+    if (meta.sheet === "system") setInterval(() => readJSON("jarvis.json", j => {
+        const key = JSON.stringify(j.jarvis);
+        if (key !== lastJarvis) { lastJarvis = key; hud.update({ jarvis: j.jarvis, now: Date.now() / 1000 }); }
+        if (j.voice && j.voice !== lastVoice) { lastVoice = j.voice; readJSON("voice.json", v => hud.update({ voice: v })); }
+    }), 100);
+}
+(function boot() { readJSON("meta.json", start); setTimeout(() => { if (!hud.meta) boot(); }, 1000); })();
+</script>
+</body>
+</html>

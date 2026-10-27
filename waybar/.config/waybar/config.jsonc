@@ -21,6 +21,7 @@
         "custom/logme",
         "custom/globe",
         "custom/vpn",
+        "custom/jarvis",
         "custom/weather",
         "pulseaudio",
         "bluetooth",
@@ -161,14 +162,14 @@
         "tooltip-format": "MPD (connected)",
         "tooltip-format-disconnected": "MPD (disconnected)"
     },
-    // Body Tracker reminder: "log me" until today has an entry (~/bin/waybar-logme); hidden after.
+    // Health Tracker reminder: a heart-pulse icon until today has an entry (~/bin/waybar-logme); hidden after.
     // Click opens (or focuses) the tracker; closing it refreshes this via signal 10.
     "custom/logme": {
         "exec": "$HOME/bin/waybar-logme",
         "return-type": "json",
         "interval": 300,
         "signal": 10,
-        "on-click": "$HOME/bin/focus-or-launch '^body-tracker$' $HOME/bin/body-tracker"
+        "on-click": "$HOME/bin/focus-or-launch '^health-tracker$' $HOME/bin/health-tracker"
     },
     // Fish: MyFishTank, with how many creatures are alive (+ an envelope while visitors' notes float in it). Click swaps the wallpaper on
     // that bar's monitor for the tank and back (~/bin/waybar-tank, ~/bin/tank-wallpaper; address in ~/.config/tank-wallpaper.toml)
@@ -194,6 +195,17 @@
         "interval": 10,
         "signal": 8,
         "on-click": "$HOME/bin/waybar-vpn toggle"
+    },
+    // Jarvis voice assistant, from a private script (~/.local/bin, not in this repo).
+    // White = standing by, half-lit = listening, lit = working/speaking, dim = off.
+    // Click: conversation popup. Right-click: turn it on/off.
+    "custom/jarvis": {
+        "exec": "$HOME/.local/bin/waybar-jarvis",
+        "return-type": "json",
+        "interval": 30,
+        "signal": 12,
+        "on-click": "$HOME/.local/bin/waybar-jarvis convo",
+        "on-click-right": "$HOME/.local/bin/waybar-jarvis power"
     },
     // Current temperature (KWeather's saved location, via Open-Meteo); click opens/focuses KWeather
     // Bluetooth: dim = off, plain = on, accent + count = devices connected; hidden with no adapter.

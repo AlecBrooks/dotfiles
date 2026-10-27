@@ -54,6 +54,19 @@ done
 [[ -z "$MODE" && -r "$MODE_FILE" ]] && MODE="$(tr -d '[:space:]' <"$MODE_FILE")"
 [[ "$MODE" == light ]] || MODE=dark
 
+# Desktop theme (~/bin/theme). "wallpaper" (the default) is everything below as it always was; any
+# other theme brings its own fixed palette (palette.py) and may replace templates by file name
+# (templates/), so it renders the very same output files and switching back regenerates them.
+DESKTOP_THEME="${DESKTOP_THEME:-}"
+[[ -z "$DESKTOP_THEME" && -r "$HOME/.local/state/desktop-theme/current" ]] \
+    && DESKTOP_THEME="$(tr -d '[:space:]' <"$HOME/.local/state/desktop-theme/current")"
+THEME_DIR=""
+if [[ -n "$DESKTOP_THEME" && "$DESKTOP_THEME" != wallpaper ]]; then
+    THEME_DIR="$HOME/.config/desktop-themes/$DESKTOP_THEME"
+    [[ -r "$THEME_DIR/palette.py" ]] || { echo "wallpaper-theme: no theme '$DESKTOP_THEME' in $THEME_DIR" >&2; exit 1; }
+    MODE=dark
+fi
+
 mkdir -p "$OUT_DIR" "$(dirname "$LOG")"
 log() { printf '[%s] %s\n' "$(date -Is)" "$*" >>"$LOG"; }
 
@@ -62,7 +75,9 @@ exec 9>"$OUT_DIR/.lock"
 flock -w 20 9 || { echo "wallpaper-theme: another run is still going" >&2; exit 1; }
 
 # Resolve the image: the preview of whatever wallpaper is assigned to $MONITOR.
-if [[ -z "$IMAGE" ]]; then
+if [[ -n "$THEME_DIR" ]]; then
+    IMAGE="theme:$DESKTOP_THEME"   # a fixed palette; the wallpaper doesn't matter
+elif [[ -z "$IMAGE" ]]; then
     IMAGE="$(python3 - "$PICKER_CONFIG" "$WORKSHOP" "$MONITOR" <<'PYEOF'
 import json, os, sys
 cfg, workshop, monitor = sys.argv[1:4]
@@ -89,10 +104,34 @@ log "source=$IMAGE monitor=$MONITOR style=$STYLE mode=$MODE dry=${#DRY[@]}"
 # Build the tuned palette JSON once; every template and script below reads it.
 PALETTE="$OUT_DIR/.colors.json"
 [[ ${#DRY[@]} -gt 0 ]] && PALETTE="$OUT_DIR/.colors.dry.json"
-"$HERE/wallpaper-theme-palette" --image "$IMAGE" --style "$STYLE" --surfaces "${WALLPAPER_THEME_SURFACES:-neutral}" --mode "$MODE" --out "$PALETTE" 2>>"$LOG" \
-    || { log "palette FAILED"; echo "wallpaper-theme: could not build the palette (see $LOG)" >&2; exit 1; }
+MATUGEN_CONFIG="$HOME/.config/matugen/config.toml"
+if [[ -n "$THEME_DIR" ]]; then
+    python3 "$THEME_DIR/palette.py" --out "$PALETTE" 2>>"$LOG" \
+        || { log "theme palette FAILED"; echo "wallpaper-theme: $DESKTOP_THEME's palette.py failed (see $LOG)" >&2; exit 1; }
+    # The same matugen config, with each template the theme replaces pointed at its copy.
+    # (Kept out of $OUT_DIR so switching back to the default leaves nothing of this theme behind.)
+    MATUGEN_CONFIG="$(mktemp --tmpdir wallpaper-theme-matugen.XXXXXX.toml)"
+    trap 'rm -f "$MATUGEN_CONFIG"' EXIT
+    python3 - "$HOME/.config/matugen/config.toml" "$THEME_DIR/templates" "$MATUGEN_CONFIG" <<'PYEOF'
+import os, re, sys
+src, tdir, dst = sys.argv[1:4]
+def swap(m):
+    name = os.path.basename(os.path.expanduser(m.group(2)))
+    mine = os.path.join(tdir, name)
+    return f"{m.group(1)}'{mine}'" if os.path.isfile(mine) else m.group(0)
+text = re.sub(r"^(input_path\s*=\s*)'([^']*)'", swap, open(src, encoding="utf-8").read(), flags=re.M)
+# plus the templates only this theme has (matugen-extra.toml next to templates/)
+extra = os.path.join(os.path.dirname(tdir), "matugen-extra.toml")
+if os.path.isfile(extra):
+    text = text.rstrip("\n") + "\n\n" + open(extra, encoding="utf-8").read()
+open(dst, "w", encoding="utf-8").write(text)
+PYEOF
+else
+    "$HERE/wallpaper-theme-palette" --image "$IMAGE" --style "$STYLE" --surfaces "${WALLPAPER_THEME_SURFACES:-neutral}" --mode "$MODE" --out "$PALETTE" 2>>"$LOG" \
+        || { log "palette FAILED"; echo "wallpaper-theme: could not build the palette (see $LOG)" >&2; exit 1; }
+fi
 if [[ ${#DRY[@]} -eq 0 ]]; then
-    matugen json "$PALETTE" -c "$HOME/.config/matugen/config.toml" -m "$MODE" -q \
+    matugen json "$PALETTE" -c "$MATUGEN_CONFIG" -m "$MODE" -q \
         || { log "matugen FAILED"; echo "wallpaper-theme: matugen failed (see $LOG)" >&2; exit 1; }
 fi
 
@@ -102,7 +141,10 @@ printf '%s\n' "$IMAGE" >"$OUT_DIR/.source"
 # its palette swapped for one derived from the wallpaper (a lightness gradient of `primary`,
 # matching the powerline segments' light->dark order). Bash sets STARSHIP_CONFIG to it.
 if [[ ${#DRY[@]} -eq 0 ]]; then
-    python3 - "$OUT_DIR/.colors.json" "$HOME/.config/starship.toml" "$OUT_DIR/starship.toml" <<'PYEOF' \
+    # (a theme may bring its own prompt layout: its starship.toml replaces the tracked one here)
+    STARSHIP_SRC="$HOME/.config/starship.toml"
+    [[ -n "$THEME_DIR" && -r "$THEME_DIR/starship.toml" ]] && STARSHIP_SRC="$THEME_DIR/starship.toml"
+    python3 - "$OUT_DIR/.colors.json" "$STARSHIP_SRC" "$OUT_DIR/starship.toml" <<'PYEOF' \
         || log "starship palette step FAILED (non-fatal)"
 import colorsys, json, re, sys
 jpath, src, dst = sys.argv[1:4]
@@ -203,6 +245,11 @@ PYEOF
     fi
 fi
 
+# RGB lighting (OpenRGB) in the accent color, in the background: never holds the theme up.
+if [[ ${#DRY[@]} -eq 0 && -x "$HERE/rgb-sync" ]]; then
+    setsid -f "$HERE/rgb-sync" >>"$LOG" 2>&1 </dev/null 9>&-
+fi
+
 if [[ $RELOAD -eq 1 ]]; then
     # kitty re-reads its config (and our include) on SIGUSR1.
     pkill -u "$(id -u)" -USR1 -x kitty 2>/dev/null || true
@@ -216,9 +263,7 @@ if [[ $RELOAD -eq 1 ]]; then
     # (Gtk::Widget::get_style_context in Cava::onUpdate; hit on 2026-09-23). The Apply path in the
     # picker restarts Waybar itself right after re-theming, so it sets WALLPAPER_THEME_SKIP_WAYBAR=1.
     if [[ "${WALLPAPER_THEME_SKIP_WAYBAR:-0}" != "1" ]] && command -v waybar >/dev/null; then
-        pkill -u "$(id -u)" -TERM -x waybar 2>/dev/null || true
-        for _ in $(seq 1 20); do pgrep -u "$(id -u)" -x waybar >/dev/null || break; sleep 0.1; done
-        setsid -f waybar >>"$HOME/.local/state/wallpaper-picker/waybar.log" 2>&1 </dev/null 9>&-
+        "$HERE/waybar-start" --restart
     fi
     pkill -u "$(id -u)" -x hyprlauncher 2>/dev/null || true
     systemctl --user try-restart hyprpolkitagent.service 2>/dev/null || true

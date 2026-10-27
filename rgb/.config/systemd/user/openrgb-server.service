@@ -1,0 +1,14 @@
+[Unit]
+Description=OpenRGB SDK server (RGB lighting, local only): ~/bin/rgb-sync and Jarvis talk to it
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/openrgb --server --server-host 127.0.0.1 --noautoconnect
+# once the hardware is detected, give everything the theme's accent color
+ExecStartPost=-%h/bin/rgb-sync --wait
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

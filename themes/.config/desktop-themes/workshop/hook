@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# workshop hook (called by ~/bin/theme): on = put the HUD desk up on every monitor, start the window
+# open/close overlay (unfold.py) and apply the tmux look; off = take all of it down and delete every
+# file only this theme generates (matugen-extra.toml), so the default theme never sees any of it.
+# Wallpaper Engine is stopped/restarted by ~/bin/theme itself.
+HERE="$(dirname "$(readlink -f "$0")")"
+GEN="$HOME/.cache/wallpaper-theme/theme"                    # lazygit.yml, yazi/, tmux.conf
+SUBLIME_UI="$HOME/.config/sublime-text/Packages/User/Adaptive.sublime-theme"
+TMUX_CONF="$HOME/.config/tmux/tmux.conf"
+SWAYNC_CSS="$HOME/.config/swaync/style.css"
+MARK="workshop-theme-generated"
+
+tmux_on() {
+    [[ -r "$GEN/tmux.conf" ]] || return 0
+    # New tmux servers read ~/.config/tmux/tmux.conf; only ever write one that is ours (marked).
+    if [[ ! -e "$TMUX_CONF" ]] || grep -q "$MARK" "$TMUX_CONF"; then
+        mkdir -p "$(dirname "$TMUX_CONF")"
+        printf '# %s: written by the workshop theme hook, deleted when switching back.\nsource-file -q %s\n' \
+            "$MARK" "$GEN/tmux.conf" >"$TMUX_CONF"
+    fi
+    tmux source-file "$GEN/tmux.conf" 2>/dev/null || true   # the running server (no server: nothing to do)
+}
+
+tmux_off() {
+    # Every option the theme set goes back to tmux's own default on the running server.
+    if [[ -r "$GEN/tmux.conf" ]] && tmux list-sessions >/dev/null 2>&1; then
+        sed -n 's/^set -g \([a-z-]*\) .*/\1/p' "$GEN/tmux.conf" | while read -r opt; do
+            tmux set -gu "$opt" 2>/dev/null
+        done
+    fi
+    if [[ -f "$TMUX_CONF" ]] && grep -q "$MARK" "$TMUX_CONF"; then
+        rm -f "$TMUX_CONF"
+        rmdir "$(dirname "$TMUX_CONF")" 2>/dev/null || true
+    fi
+}
+
+case "${1:-}" in
+    on)
+        python3 "$HERE/hud/hud.py" on all
+        python3 "$HERE/unfold.py" on
+        python3 "$HERE/emblem.py"            # tray toggle + fastfetch logo
+        pkill -RTMIN+13 -x waybar 2>/dev/null   # the bar started before the emblem existed: show it now
+        tmux_on
+        swaync-client -rs >/dev/null 2>&1 || true   # notification styles (templates/swaync.css)
+        ;;
+    off)
+        python3 "$HERE/unfold.py" off
+        python3 "$HERE/hud/hud.py" off all
+        tmux_off
+        [[ -f "$SUBLIME_UI" ]] && grep -q "$MARK" "$SUBLIME_UI" && rm -f "$SUBLIME_UI"
+        if [[ -f "$SWAYNC_CSS" ]] && grep -q "$MARK" "$SWAYNC_CSS"; then
+            rm -f "$SWAYNC_CSS"
+            swaync-client -rs >/dev/null 2>&1 || true   # back to swaync's stock style
+        fi
+        rm -rf "$GEN" ;;
+    *)  echo "usage: hook on|off" >&2; exit 2 ;;
+esac

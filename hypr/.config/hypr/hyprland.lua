@@ -476,7 +476,7 @@ hl.bind(mainMod .. " + G", hl.dsp.exec_cmd("rofimoji --selector hyprlauncher --a
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }))
 hl.bind(mainMod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))    -- dwindle only
-hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("hyprlock"))
+hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("~/bin/lock"))   -- hyprlock, in the active desktop theme
 
 -- Move focus with mainMod + arrow keys
 hl.bind(mainMod .. " + left",  hl.dsp.focus({ direction = "left" }))
@@ -532,6 +532,15 @@ local suppressMaximizeRule = hl.window_rule({
 })
 
 suppressMaximizeRule:set_enabled(false)
+
+-- Jarvis conversation popup (waybar-jarvis convo): small floating panel, top right
+hl.window_rule({
+    name  = "jarvis-convo",
+    match = { class = "^jarvis-convo$" },
+    float = true,
+    size  = "640 420",
+    move  = "(monitor_w-660) 50",
+})
 
 hl.window_rule({
     -- Fix some dragging issues with XWayland
@@ -592,3 +601,10 @@ hl.window_rule({
 --     },
 --     opacity = "0.94 override 0.91 override 1.0 override",
 -- })
+
+-- Desktop theme extras (~/bin/theme): a non-default theme's generated hypr-colors.lua can return an
+-- apply() that overrides the look above. Runs last on purpose; the default theme's file has none.
+if type(theme.apply) == "function" then
+    local ok, err = pcall(theme.apply)
+    if not ok then print("theme apply() failed: " .. tostring(err)) end
+end

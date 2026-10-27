@@ -1,0 +1,118 @@
+// -*- mode: jsonc -*-
+// Workshop theme bar: a header strip, like the top rule of a drafting sheet. Every field is a
+// small dim LABEL followed by its value; glyphs stay only where they are the whole status
+// (VPN padlock, Bluetooth).
+//
+// Everything not set here comes from the default bar (`include`; values here win, objects merge),
+// so new modules and scripts keep working in both themes. Started by ~/bin/waybar-start.
+{
+    "include": ["~/.config/waybar/config.jsonc"],
+    "height": 30,
+    "spacing": 0,
+
+    "modules-left": [
+        "custom/mark",
+        "hyprland/workspaces",
+        "group/media-drawer"
+    ],
+    "modules-center": [
+        "hyprland/window"
+    ],
+    "modules-right": [
+        "custom/logme",
+        "custom/globe",
+        "custom/vpn",
+        "custom/jarvis",
+        "pulseaudio",
+        "bluetooth",
+        "battery",
+        "clock",
+        "custom/notifications",
+        "group/tray-drawer",
+        "custom/power"
+    ],
+
+    // CPU, memory, temperatures, GPU and the weather live on the desk (the HUD sheets), so the bar
+    // keeps only what you act on or need while windows cover the desk.
+
+    // The tray toggle shows the theme's emblem (emblem.py, drawn by the hook) instead of the swirl.
+    "image#tray-toggle": {
+        "exec": "echo \"$HOME/.cache/wallpaper-theme/theme/emblem-icon.png\"",
+        "signal": 13
+    },
+
+    // Which monitor this bar is on: the sheet number, the one fixed reference on each screen.
+    "custom/mark": {
+        "exec": "case \"$WAYBAR_OUTPUT_NAME\" in DP-3) echo 'MAIN';; HDMI-A-1) echo 'AUX';; *) echo \"${WAYBAR_OUTPUT_NAME:-DISPLAY}\";; esac",
+        "interval": "once",
+        "format": "{}",
+        "tooltip": false
+    },
+
+    // Desks, not workspace ids: DP-3 holds 1/3/5 and HDMI-A-1 2/4/6, which are desks 1, 2, 3.
+    "hyprland/workspaces": {
+        "format": "{icon}",
+        "format-icons": {
+            "1": "01", "2": "01", "3": "02", "4": "02", "5": "03", "6": "03",
+            "default": "--"
+        }
+    },
+
+    // The app's class is the label, the title is the value.
+    "hyprland/window": {
+        "format": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>{class}</span>  {title}",
+        "max-length": 90,
+        "separate-outputs": true
+    },
+
+    "custom/jarvis": {
+        "format": "<span size='8pt' letter_spacing='1600'>VOX</span>"
+    },
+
+    "custom/weather": {
+        "format": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>OUT</span> {}"
+    },
+
+    "cpu": {
+        "interval": 3,
+        "format": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>CPU</span> {usage}%",
+        "states": { "busy": 70, "critical": 90 },
+        "tooltip": true
+    },
+
+    "memory": {
+        "interval": 5,
+        "format": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>MEM</span> {percentage}%",
+        "tooltip-format": "{used:0.1f} of {total:0.1f} GiB used\nswap {swapUsed:0.1f} of {swapTotal:0.1f} GiB",
+        "states": { "busy": 75, "critical": 90 }
+    },
+
+    // Same sensor as the default bar; the label replaces the thermometer glyph.
+    "temperature": {
+        "format": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>TEMP</span> {temperatureC}°",
+        "format-critical": "<span size='8pt' letter_spacing='1200'>TEMP</span> {temperatureC}°"
+    },
+
+    "custom/gpu": {
+        "exec": "WAYBAR_GPU_LABEL=\"<span size='8pt' foreground='#7a6443' letter_spacing='1200'>GPU</span>\" $HOME/bin/waybar-gpu"
+    },
+
+    "pulseaudio": {
+        "format": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>VOL</span> {volume}%",
+        "format-bluetooth": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>VOL·BT</span> {volume}%",
+        "format-bluetooth-muted": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>VOL·BT</span> MUTE",
+        "format-muted": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>VOL</span> MUTE"
+    },
+
+    "battery": {
+        "format": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>BAT</span> {capacity}%",
+        "format-charging": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>CHG</span> {capacity}%",
+        "format-plugged": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>AC</span> {capacity}%"
+    },
+
+    // Date and time: the day matters as much as the hour.
+    "clock": {
+        "format": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>{0:%a %d %b}</span>  {0:%I:%M %p}",
+        "format-alt": "<span size='8pt' foreground='#7a6443' letter_spacing='1200'>WEEK {0:%V}</span>  {0:%Y-%m-%d}"
+    }
+}

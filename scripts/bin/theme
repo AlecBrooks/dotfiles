@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# theme: switch the whole desktop between themes, and prove that switching back is lossless.
+#
+#   theme                  show the current theme and the ones available
+#   theme <name>           switch to <name> (wallpaper = the wallpaper-driven default)
+#   theme toggle           switch to the other theme (wallpaper <-> the last non-default one)
+#   theme snapshot [DIR]   copy every file/setting a theme writes into DIR (a safety net)
+#   theme verify DIR       compare the live files/settings against a snapshot; exit 1 on any difference
+#   theme restore DIR      put a snapshot's files/settings back (the last resort, if a switch breaks)
+#
+# A theme is a folder in ~/.config/desktop-themes/<name>/ (stow package "themes"). The default,
+# "wallpaper", has no folder: it is today's matugen pipeline untouched. Every other theme renders
+# the SAME set of output files (see MANIFEST) from its own palette and templates, so switching back
+# is just re-running the default pipeline, and `theme verify` against a snapshot proves it.
+set -euo pipefail
+
+HERE="$(dirname "$(readlink -f "$0")")"
+THEMES_DIR="$HOME/.config/desktop-themes"
+STATE_DIR="$HOME/.local/state/desktop-theme"
+CURRENT_FILE="$STATE_DIR/current"
+LAST_FILE="$STATE_DIR/last-custom"
+
+# Everything a theme switch can change. Directories are compared file by file.
+MANIFEST=(
+    ".cache/wallpaper-theme"
+    ".config/sublime-text/Packages/User/Wallpaper.sublime-color-scheme"
+    ".config/hypr/hyprtoolkit.conf"
+    ".config/fastfetch/config.jsonc"
+    ".config/fastfetch/airbender.gif"
+    ".config/qt6ct/qt6ct.conf"
+    ".config/qt6ct/colors"
+    ".config/qt5ct/qt5ct.conf"
+    ".config/qt5ct/colors"
+    ".config/Kvantum"
+    ".config/kdeglobals"
+    ".local/share/icons/wallpaper-icons"
+    ".local/share/themes/Wallpaper"
+    ".config/gtk-3.0/settings.ini"
+    ".config/gtk-4.0/settings.ini"
+    ".config/gtk-4.0/gtk.css"
+    ".config/gtk-4.0/gtk-dark.css"
+    "GitHub/Obsidian/.obsidian/snippets/wallpaper-theme.css"
+    "GitHub/Obsidian/.obsidian/appearance.json"
+    # only ever written by a non-default theme; must be gone again after switching back
+    ".config/sublime-text/Packages/User/Adaptive.sublime-theme"
+    ".config/tmux"
+    ".config/swaync/style.css"
+)
+# Files inside the manifest that change on every run whatever the theme (timestamps, locks, logs).
+VOLATILE_RE='/(\.lock|\.changed-at|\.source|.*\.log)$'
+GSETTINGS_KEYS=(gtk-theme icon-theme color-scheme font-name monospace-font-name cursor-theme cursor-size)
+
+current() { [[ -r "$CURRENT_FILE" ]] && tr -d '[:space:]' <"$CURRENT_FILE" || echo wallpaper; }
+
+list_themes() {
+    echo wallpaper
+    [[ -d "$THEMES_DIR" ]] || return 0
+    find -L "$THEMES_DIR" -mindepth 2 -maxdepth 2 -name theme.conf -printf '%h\n' | xargs -rn1 basename | sort
+}
+
+# One line per file: "<sha256>  <path relative to ~>", plus the gsettings values.
+fingerprint() {
+    local rel
+    for rel in "${MANIFEST[@]}"; do
+        [[ -e "$HOME/$rel" ]] || continue   # absent is a state too: it just has no lines
+        (cd "$HOME" && find -L "$rel" -type f -print0 | sort -z | xargs -0r sha256sum) | grep -Ev "$VOLATILE_RE" || true
+    done
+    if command -v gsettings >/dev/null; then
+        local key
+        for key in "${GSETTINGS_KEYS[@]}"; do
+            echo "gsettings  $key=$(gsettings get org.gnome.desktop.interface "$key" 2>/dev/null || echo '?')"
+        done
+    fi
+}
+
+cmd_snapshot() {
+    local dir="${1:-$STATE_DIR/snapshot-$(date +%Y%m%d-%H%M%S)}"
+    [[ -e "$dir" ]] && { echo "theme: $dir already exists" >&2; exit 1; }
+    mkdir -p "$dir/files"
+    local rel
+    for rel in "${MANIFEST[@]}"; do
+        [[ -e "$HOME/$rel" ]] || continue
+        mkdir -p "$dir/files/$(dirname "$rel")"
+        cp -aL "$HOME/$rel" "$dir/files/$rel"
+    done
+    fingerprint >"$dir/fingerprint"
+    current >"$dir/theme"
+    echo "theme: snapshot of '$(current)' in $dir ($(wc -l <"$dir/fingerprint") entries)"
+}
+
+cmd_verify() {
+    local dir="${1:?usage: theme verify DIR}"
+    [[ -r "$dir/fingerprint" ]] || { echo "theme: no snapshot in $dir" >&2; exit 2; }
+    if diff <(grep -v '^missing  ' "$dir/fingerprint") <(fingerprint) >"$STATE_DIR/verify.diff"; then
+        echo "theme: identical to $dir"
+    else
+        echo "theme: DIFFERS from $dir:" >&2
+        sed 's/^/  /' "$STATE_DIR/verify.diff" | head -40 >&2
+        echo "  ($(grep -c '^[<>]' "$STATE_DIR/verify.diff") differing lines; all of them in $STATE_DIR/verify.diff)" >&2
+        exit 1
+    fi
+}
+
+cmd_restore() {
+    local dir="${1:?usage: theme restore DIR}" rel
+    [[ -d "$dir/files" ]] || { echo "theme: no snapshot in $dir" >&2; exit 2; }
+    for rel in "${MANIFEST[@]}"; do
+        [[ -e "$dir/files/$rel" ]] || continue
+        if [[ -d "$dir/files/$rel" ]]; then
+            # Copy into the (possibly symlinked) target directory rather than replacing it.
+            mkdir -p "$HOME/$rel"
+            cp -a "$dir/files/$rel/." "$HOME/$rel/"
+        else
+            cp -a "$dir/files/$rel" "$HOME/$rel"
+        fi
+    done
+    grep '^gsettings  ' "$dir/fingerprint" | sed 's/^gsettings  //' | while IFS='=' read -r key val; do
+        [[ "$val" == '?' ]] || gsettings set org.gnome.desktop.interface "$key" "$val" 2>/dev/null || true
+    done
+    echo "theme: restored files from $dir (restart apps to see it)"
+}
+
+# (no grep -q: it would quit early, SIGPIPE list_themes, and pipefail would call that a failure)
+valid() { list_themes | grep -x -- "$1" >/dev/null; }
+
+hook() {   # hook THEME on|off: the theme's own extras (its desk, ...), if it has any
+    local h="$THEMES_DIR/$1/hook"
+    [[ "$1" != wallpaper && -x "$h" ]] || return 0
+    "$h" "$2" || echo "theme: $1's hook $2 failed" >&2
+}
+
+cmd_switch() {
+    local new="$1" old
+    old="$(current)"
+    valid "$new" || { echo "theme: no theme '$new' (have: $(list_themes | tr '\n' ' '))" >&2; exit 2; }
+    hook "$old" off
+    printf '%s\n' "$new" >"$CURRENT_FILE"
+    [[ "$new" == wallpaper ]] || printf '%s\n' "$new" >"$LAST_FILE"
+    if [[ "$new" == wallpaper ]]; then
+        # Exactly what login does: Wallpaper Engine back on, the theme from its wallpaper, Waybar.
+        "$HOME/.local/bin/wallpaper-picker" --apply-saved >/dev/null \
+            || "$HERE/wallpaper-theme" || true
+    else
+        "$HOME/.local/bin/wallpaper-picker" --stop 2>/dev/null || true
+        "$HERE/wallpaper-theme" || true
+        hook "$new" on
+    fi
+    echo "theme: $old -> $new"
+}
+
+# Login (wallpaper-picker-start.service) with a non-default theme active.
+cmd_login() {
+    local t
+    t="$(current)"
+    "$HERE/wallpaper-theme" --no-restart-apps || "$HERE/waybar-start"
+    hook "$t" on
+}
+
+mkdir -p "$STATE_DIR"
+case "${1:-}" in
+    "")        echo "current: $(current)"; echo "available:"; list_themes | sed 's/^/  /' ;;
+    snapshot)  shift; cmd_snapshot "$@" ;;
+    verify)    shift; cmd_verify "$@" ;;
+    restore)   shift; cmd_restore "$@" ;;
+    -h|--help) sed -n '2,14p' "$0" ;;
+    --login)   cmd_login ;;
+    toggle)
+        if [[ "$(current)" == wallpaper ]]; then
+            last="$(tr -d '[:space:]' <"$LAST_FILE" 2>/dev/null)"
+            valid "${last:-x}" || last="$(list_themes | grep -vx wallpaper | head -1)"
+            [[ -n "$last" ]] || { echo "theme: there is no other theme" >&2; exit 2; }
+            cmd_switch "$last"
+        else
+            cmd_switch wallpaper
+        fi ;;
+    *)         cmd_switch "$1" ;;
+esac

@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""waybar-logme: "log me" on the bar until today has an entry in the Body Tracker.
+"""waybar-logme: a heart-pulse icon on the bar until today has an entry in the Health Tracker.
 
-Reads ~/Applications/body-tracker/body_data.json (synced by Seafile, so logging on either machine
+Reads ~/Applications/health-tracker/health_data.json (synced by Seafile, so logging on either machine
 clears it on both). The tracker only stores a day once something was saved for it, so a present
 key means "logged". Prints empty text (module hidden) when today is logged or there's no data file.
 
 Waybar: "custom/logme": { "exec": "$HOME/bin/waybar-logme", "return-type": "json",
-                          "interval": 300, "signal": 10, ... }   (~/bin/body-tracker sends signal 10)
+                          "interval": 300, "signal": 10, ... }   (~/bin/health-tracker sends signal 10)
 """
 import datetime
 import json
 import os
 
-DATA = os.path.expanduser("~/Applications/body-tracker/body_data.json")
+DATA = os.path.expanduser("~/Applications/health-tracker/health_data.json")
+ICON = "\U000f05f6"   # nerd-font heart pulse
 
 
 def main():
@@ -26,8 +27,8 @@ def main():
     if entries.get(today):
         print(json.dumps({"text": ""}))
     else:
-        print(json.dumps({"text": "log me", "class": "due",
-                          "tooltip": f"No Body Tracker entry for {today} yet.\nClick to log the day."}))
+        print(json.dumps({"text": ICON, "class": "due",
+                          "tooltip": f"No Health Tracker entry for {today} yet.\nClick to log the day."}))
 
 
 if __name__ == "__main__":

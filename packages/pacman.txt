@@ -107,6 +107,7 @@ swappy
 swaync
 tealdeer
 tmux
+ttf-ibm-plex
 ttf-jetbrains-mono-nerd
 ttf-nerd-fonts-symbols-mono
 uv

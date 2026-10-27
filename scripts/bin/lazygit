@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# lazygit, in the active desktop theme's colors (~/bin/theme): a theme can render a lazygit.yml into
+# ~/.cache/wallpaper-theme/theme/, merged over ~/.config/lazygit/config.yml. Without one this is plain
+# lazygit. (Shadows the real binary: ~/bin comes first on PATH; opengit puts it first for its windows.)
+here="$(dirname "$(readlink -f "$0")")"
+real=""
+IFS=: read -ra dirs <<<"$PATH"
+for d in "${dirs[@]}" /usr/bin; do
+    [[ -x "$d/lazygit" && "$(readlink -f "$d/lazygit")" != "$here/lazygit" ]] && { real="$d/lazygit"; break; }
+done
+[[ -n "$real" ]] || { echo "lazygit: the real lazygit isn't installed" >&2; exit 127; }
+theme="$HOME/.cache/wallpaper-theme/theme/lazygit.yml"
+if [[ -r "$theme" && -z "${LG_CONFIG_FILE:-}" ]]; then
+    export LG_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/lazygit/config.yml,$theme"
+fi
+exec "$real" "$@"
